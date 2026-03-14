@@ -157,6 +157,11 @@ export default defineNuxtConfig({
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Allow-Credentials': 'true' // 如果需要携带 cookie 或认证信息
         }
+     cors: true, // 明确开启 CORS
+  // 确保不触发重定向
+  redirect: undefined
+
+
       },
       // 静态资源文件缓存配置
       '/_nuxt/**': {
