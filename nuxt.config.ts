@@ -144,23 +144,55 @@ export default defineNuxtConfig({
     timing: true,
     // 增加请求超时时间
     routeRules: {
-      // 完全禁用所有API路由的缓存，确保每次都请求数据库
+      // API 路由配置 - 最关键的部分
       '/api/**': {
-  headers: {
-    'Cache-Control': 'no-cache, no-store, must-revalidate',
-    'Pragma': 'no-cache',
-    'Expires': '0',
-    'Connection': 'keep-alive',
-    // 添加以下 CORS 头部（根据实际需求调整）
-    'Access-Control-Allow-Origin': '*', // 如果允许所有来源，开发时可用；生产环境建议指定具体域名
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    'Access-Control-Allow-Credentials': 'true' // 如果需要携带 cookie 或认证信息
-             },
-     cors: true, // 明确开启 CORS
-  // 确保不触发重定向
-  redirect: undefined
-           }
+        cors: true, // 开启 CORS
+        headers: {
+          // 缓存控制
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0',
+          // CORS 头部
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, PATCH, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, Accept',
+          'Access-Control-Allow-Credentials': 'true',
+          'Access-Control-Max-Age': '86400', // 预检请求缓存 24 小时
+          // 连接设置
+          'Connection': 'keep-alive'
+        }
+      },
+      
+      // 公开 API 端点特殊处理
+      '/api/songs/public': {
+        cors: true,
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, OPTIONS',
+          'Access-Control-Allow-Headers': '*'
+        }
+      },
+      
+      '/api/songs/count': {
+        cors: true,
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, OPTIONS',
+          'Access-Control-Allow-Headers': '*'
+        }
+      },
+      
+      '/api/site-config': {
+        cors: true,
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, OPTIONS',
+          'Access-Control-Allow-Headers': '*'
+        }
+      },
 
       // 静态资源文件缓存配置
       '/_nuxt/**': {
@@ -193,36 +225,36 @@ export default defineNuxtConfig({
       '/login': {
         headers: {
           'Cache-Control': 'no-cache, no-store, must-revalidate',
-          Pragma: 'no-cache',
-          Expires: '0'
+          'Pragma': 'no-cache',
+          'Expires': '0'
         }
       },
       '/dashboard': {
         headers: {
           'Cache-Control': 'no-cache, no-store, must-revalidate',
-          Pragma: 'no-cache',
-          Expires: '0'
+          'Pragma': 'no-cache',
+          'Expires': '0'
         }
       },
       '/change-password': {
         headers: {
           'Cache-Control': 'no-cache, no-store, must-revalidate',
-          Pragma: 'no-cache',
-          Expires: '0'
+          'Pragma': 'no-cache',
+          'Expires': '0'
         }
       },
       '/auth/**': {
         headers: {
           'Cache-Control': 'no-cache, no-store, must-revalidate',
-          Pragma: 'no-cache',
-          Expires: '0'
+          'Pragma': 'no-cache',
+          'Expires': '0'
         }
       },
       '/notification-settings': {
         headers: {
           'Cache-Control': 'no-cache, no-store, must-revalidate',
-          Pragma: 'no-cache',
-          Expires: '0'
+          'Pragma': 'no-cache',
+          'Expires': '0'
         }
       }
     },
