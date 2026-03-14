@@ -146,11 +146,18 @@ export default defineNuxtConfig({
     routeRules: {
       // 完全禁用所有API路由的缓存，确保每次都请求数据库
       '/api/**': {
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          Pragma: 'no-cache',
-          Expires: '0',
-          Connection: 'keep-alive'
+  headers: {
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+    'Connection': 'keep-alive',
+    // 添加以下 CORS 头部（根据实际需求调整）
+    'Access-Control-Allow-Origin': '*', // 如果允许所有来源，开发时可用；生产环境建议指定具体域名
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Credentials': 'true' // 如果需要携带 cookie 或认证信息
+  }
+}
         }
       },
       // 静态资源文件缓存配置
