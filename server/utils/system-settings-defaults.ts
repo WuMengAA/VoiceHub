@@ -90,6 +90,9 @@ export const SYSTEM_SETTINGS_DEFAULTS = {
   // 平台管理
   enabledPlatforms: JSON.stringify([...MUSIC_SOURCE_PLATFORMS]),
   platformOrder: JSON.stringify([...MUSIC_SOURCE_PLATFORMS]),
+  // 播控（学生端同步音乐管理员播放状态）
+  broadcastEnabled: true,
+  broadcastBaselineUserId: null,
 }
 
 export const PUBLIC_SETTINGS_FIELDS = [

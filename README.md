@@ -821,7 +821,8 @@ VoiceHub/
 │   │   │   ├── RecentSongsModal.vue   # 最近播放弹窗
 │   │   │   ├── RequestForm.vue        # 点歌表单
 │   │   │   ├── ScheduleList.vue       # 排期列表展示
-│   │   │   ├── BroadcastNowPlaying.vue # 校园广播正在播放条（含一起听开关）
+│   │   │   ├── BroadcastNowPlaying.vue # 校园广播正在播放条（含一起听开关与播控入口）
+│   │   │   ├── BroadcastSettingsModal.vue # 播控设置弹窗（总开关 + 选取基准播控人）
 │   │   │   └── SongList.vue           # 歌曲列表
 │   │   ├── UI/                # 通用UI组件
 │   │   │   ├── AudioPlayer/   # 音频播放器组件模块
@@ -873,7 +874,7 @@ VoiceHub/
 │   │   ├── useAudioPlayerControl.ts # 音频播放器控制hooks
 │   │   ├── useAudioPlayerEnhanced.ts # 增强音频播放器hooks
 │   │   ├── useAudioPlayerSync.ts # 音频播放器同步hooks
-│   │   ├── useBroadcastSync.ts  # 校园广播状态同步hooks（订阅/一起听/上报）
+│   │   ├── useBroadcastSync.ts  # 校园广播状态同步hooks（订阅/一起听/上报/基准播控权）
 │   │   ├── useAudioQuality.ts  # 音质管理hooks
 │   │   ├── useAudioVisualizer.ts # 音频可视化hooks
 │   │   ├── useAuth.ts          # 认证功能hooks
@@ -1187,10 +1188,13 @@ VoiceHub/
 │   │   │   ├── bind.post.ts         # 绑定MeoW账号
 │   │   │   └── unbind.post.ts       # 解绑MeoW账号
 │   │   ├── music/          # 音乐相关API
+│   │   │   ├── broadcast/           # 播控基准配置
+│   │   │   │   ├── authority.get.ts # 读取基准播控人与候选名单（歌曲管理员及以上）
+│   │   │   │   └── authority.post.ts# 修改基准播控人与总开关（管理员及以上）
 │   │   │   ├── broadcast.get.ts     # 读取校园广播正在播放状态（公开）
-│   │   │   ├── broadcast.post.ts    # 上报校园广播播放状态（歌曲管理员及以上）
+│   │   │   ├── broadcast.post.ts    # 上报校园广播播放状态（命中播控基准者）
 │   │   │   ├── resolve-url.post.ts # 音乐播放链接统一解析
-│   │   │   ├── state.post.ts        # 音乐状态管理
+│   │   │   ├── state.post.ts        # 旧版音乐状态通道（登录 + 播控基准门禁）
 │   │   │   └── websocket.ts         # 音乐WebSocket连接
 │   │   ├── native-api/     # 原生音乐API
 │   │   │   ├── comment/              # 评论API
@@ -1378,6 +1382,7 @@ VoiceHub/
 │   │   ├── request-utils.ts # 请求处理通用工具
 │   │   ├── requireSongAdmin.ts # 歌曲管理员权限校验工具
 │   │   ├── broadcast-state.ts # 校园广播正在播放状态（内存权威状态 + 进度外推）
+│   │   ├── broadcast-authority.ts # 播控基准解析（角色基准 / 基准播控人 / 总开关）
 │   │   ├── song-duration-policy.ts # 歌曲时长归一化与补齐/清空决策
 │   │   ├── song-name-normalize.ts # 歌曲名称标准化匹配工具
 │   │   ├── song-type-resolver.ts # 歌曲类型（语种/曲风）解析工具

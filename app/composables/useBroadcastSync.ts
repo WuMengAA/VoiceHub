@@ -53,12 +53,47 @@ const BROADCAST_IDLE_TIMEOUT_MS = 95000
 const FOLLOW_STORAGE_KEY = 'voicehub-broadcast-follow'
 const PUBLISH_STORAGE_KEY = 'voicehub-broadcast-publishing'
 
+/** 可用于播控的基准角色（与服务端 BROADCAST_BASELINE_ROLES 保持一致） */
+const BROADCAST_BASELINE_ROLES = ['SONG_ADMIN', 'ADMIN', 'SUPER_ADMIN']
+
+/** 播控基准中「人」的展示信息 */
+export interface BroadcastAuthorityUser {
+  id: number
+  name: string
+  username: string
+  role: string
+  grade: string | null
+  class: string | null
+}
+
+/** 服务端下发的播控基准配置 */
+export interface BroadcastAuthorityConfig {
+  authority: {
+    enabled: boolean
+    baselineUserId: number | null
+    effectiveBaselineUserId: number | null
+    baselineUser: BroadcastAuthorityUser | null
+    baselineUserStale: boolean
+    roles: string[]
+  }
+  /** 当前登录者是否具备播控资格（由服务端判定，客户端不再自行推断） */
+  canBroadcast: boolean
+  /** 不具备资格时的原因：ROLE / STATUS / DISABLED / NOT_BASELINE */
+  denyReason: string | null
+  /** 是否可修改基准配置（管理员及以上） */
+  canEdit: boolean
+  /** 可被选为基准播控人的候选用户（仅 canEdit 时下发） */
+  candidates: BroadcastAuthorityUser[]
+}
+
 // —— 模块级单例：整站共享一条订阅，与 useAudioPlayer 的单例风格一致 ——
 const broadcast = ref<BroadcastState | null>(null)
 const connected = ref(false)
 const followEnabled = ref(false)
 // 播控端是否对外广播：默认开启，管理员可在「正在广播」条上结束广播
 const publishEnabled = ref(true)
+// 播控基准配置：以服务端判定为准，未拉取到时按「无播控权」处理，避免误暴露播控入口
+const authorityConfig = ref<BroadcastAuthorityConfig | null>(null)
 // 广播进度的本地锚点：收到快照时的（已校时）本地时间戳与进度
 const anchorPosition = ref(0)
 const anchorAt = ref(0)
@@ -126,6 +161,28 @@ export const useBroadcastSync = () => {
 
   const active = computed(() => broadcast.value !== null)
 
+  /**
+   * 当前客户端是否具备播控资格。
+   * 判定权在服务端（角色基准 + 指定基准播控人 + 总开关），客户端只做展示——
+   * 之前用 isAdmin 本地推断，导致「非基准的歌曲管理员」也能看到播控按钮却上报失败。
+   */
+  const canPublish = computed(() => Boolean(authorityConfig.value?.canBroadcast))
+
+  /** 是否具备修改基准配置的权限（管理员及以上） */
+  const canEditAuthority = computed(() => Boolean(authorityConfig.value?.canEdit))
+
+  /** 当前生效的基准播控人；为空表示按「歌曲管理员及以上」角色放开 */
+  const baselineUser = computed(() => authorityConfig.value?.authority.baselineUser ?? null)
+
+  /** 基准配置是否已从服务端取回（用于避免首屏闪出播控入口） */
+  const authorityLoaded = computed(() => authorityConfig.value !== null)
+
+  /** 播控总开关是否开启 */
+  const authorityEnabled = computed(() => authorityConfig.value?.authority.enabled ?? true)
+
+  /** 不具备播控资格的原因码，便于界面给出人话提示 */
+  const denyReason = computed(() => authorityConfig.value?.denyReason ?? null)
+
   /** 当前广播是否命中某条排期（用于排期列表的「正在播放」标识） */
   const isPlayingSchedule = (scheduleId: number | string, songId?: number | string) => {
     const current = broadcast.value
@@ -154,6 +211,49 @@ export const useBroadcastSync = () => {
     } catch (error) {
       console.error('获取广播状态失败:', error)
     }
+  }
+
+  // —— 播控基准 ——
+
+  /** 当前登录者是否属于可播控角色（仅用于决定「要不要去问服务端」，不用于判定能否播控） */
+  const isBroadcastStaff = () =>
+    BROADCAST_BASELINE_ROLES.includes(auth.user.value?.role || '')
+
+  /**
+   * 拉取播控基准配置。
+   * 只有歌曲管理员及以上才需要——学生端既不显示播控入口，也不该拿到教职工名单。
+   */
+  const refreshAuthority = async () => {
+    if (import.meta.server) return null
+    if (!isBroadcastStaff()) {
+      authorityConfig.value = null
+      return null
+    }
+    try {
+      const data = await $fetch<BroadcastAuthorityConfig>('/api/music/broadcast/authority')
+      authorityConfig.value = data
+      return data
+    } catch (error) {
+      console.error('获取播控基准配置失败:', error)
+      return null
+    }
+  }
+
+  /**
+   * 保存播控基准配置（仅管理员及以上可用）。
+   * 关闭总开关时服务端会立刻停播，这里同步收起本机的播控开关。
+   */
+  const saveAuthority = async (payload: { enabled?: boolean; baselineUserId?: number | null }) => {
+    if (import.meta.server) return null
+    const data = await $fetch<BroadcastAuthorityConfig>('/api/music/broadcast/authority', {
+      method: 'POST',
+      body: payload
+    })
+    authorityConfig.value = data
+    if (data?.authority?.enabled === false) {
+      setPublishEnabled(false)
+    }
+    return data
   }
 
   const handleMessage = (payload: any) => {
@@ -227,6 +327,9 @@ export const useBroadcastSync = () => {
       .syncTime()
       .then(() => refresh())
       .catch(() => refresh())
+
+    // 播控基准以服务端为准：管理员改完基准后，其他播控端下次进页面即可看到最新基准
+    void refreshAuthority()
 
     openEventSource()
 
@@ -368,6 +471,8 @@ export const useBroadcastSync = () => {
    */
   const publish = (report: BroadcastReport, options: { immediate?: boolean } = {}) => {
     if (import.meta.server || !publishEnabled.value) return
+    // 没有播控资格就别上报了：省掉一串注定 403 的请求与刷屏日志
+    if (!canPublish.value) return
     const payload: BroadcastReport = {
       songId: Number(report.songId),
       title: report.title ?? null,
@@ -449,13 +554,27 @@ export const useBroadcastSync = () => {
     livePosition,
     progress,
     active,
-    /** 当前客户端是否具备播控权限（歌曲管理员及以上） */
-    canPublish: computed(() => Boolean(auth.isAdmin?.value)),
+    /** 当前客户端是否具备播控资格（服务端判定：角色基准 + 基准播控人 + 总开关） */
+    canPublish,
+    /** 是否可修改基准配置（管理员及以上） */
+    canEditAuthority,
+    /** 当前生效的基准播控人 */
+    baselineUser,
+    /** 基准配置是否已从服务端取回 */
+    authorityLoaded,
+    /** 播控总开关是否开启 */
+    authorityEnabled,
+    /** 不具备播控资格的原因码 */
+    denyReason,
+    /** 基准配置原始对象（含候选用户列表） */
+    authorityConfig: readonly(authorityConfig),
     isPlayingSchedule,
     isPlayingSong,
     connect,
     disconnect,
     refresh,
+    refreshAuthority,
+    saveAuthority,
     setFollowEnabled,
     setPublishEnabled,
     publish,

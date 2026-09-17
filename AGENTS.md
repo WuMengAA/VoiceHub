@@ -21,7 +21,8 @@ VoiceHub — Nuxt 4 校园广播站点歌管理系统。
 - API 调用用 `useFetch` 或 `$fetch`，需错误处理
 - 模态框用 `<Teleport to="body">`
 - 图标用 `<Icon name="..." />`，name 需在 `Icon.vue` 中有定义；图标语义必须符合实际功能（如音源控制用 `ListMusic`），禁止使用语义不符的图标
-- 项目未开启组件自动导入，模板中使用的自定义组件（含 `Icon`）必须在 `<script setup>` 中显式导入；漏导入不会报错，会被渲染成无内容的原生未知标签（如 `<icon>`），表现为占位但不显示
+- 组件自动导入**是开启的**（Nuxt 默认，`nuxt.config.ts` 未关闭 `components`/`imports`），因此漏写 `import` 不一定报错（`pages/dashboard.vue` 里 `<AdminSidebar>`、`<LazyAdminSongManagement>` 等就都没有 import）。但本仓库既有约定是**显式导入**（全仓 `<Icon>` 用法一律带 `import Icon from '~/components/UI/Icon.vue'`），新增组件请沿用显式导入，两种行为下都不会翻车
+- `<Icon name="...">` 的 name 必须是 `Icon.vue` 里已定义的分支名；未定义时不会报错，只会渲染成空白占位。列全部可用名：`grep -o "name === '[a-z0-9-]*'" app/components/UI/Icon.vue`
 - 下拉选择统一复用 `~/components/UI/Common/CustomSelect.vue`；多选使用其 `multiple` 模式，禁止为普通业务配置新增原生 `<select>`
 - 状态管理用 Composables，不用 Pinia
 

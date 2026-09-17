@@ -2,7 +2,7 @@ import { defineEventHandler, readBody } from 'h3'
 import { client } from '~/drizzle/db'
 import { createApiError } from '~~/server/utils/apiError'
 import { SERVER_ERROR_CODES } from '~~/server/config/constants'
-import { requireSongAdmin } from '~~/server/utils/requireSongAdmin'
+import { requireBroadcastAuthority } from '~~/server/utils/broadcast-authority'
 import { getBeijingTimeISOString } from '~/utils/timeUtils'
 import { getServerTimestamp } from '~~/server/utils/serverTime'
 import { applyBroadcastReport, stopBroadcast } from '~~/server/utils/broadcast-state'
@@ -10,6 +10,8 @@ import { broadcastBroadcastState } from './websocket'
 
 // 歌曲 → 当日排期的绑定结果缓存，避免每次进度上报都查库；排期可能被临时调整，因此限时生效
 const BINDING_CACHE_TTL_MS = 60_000
+// 未命中时用更短的 TTL：刚建好当日排期就开播时，学生端不用等满 60 秒才看到「正在播放」
+const BINDING_MISS_CACHE_TTL_MS = 15_000
 const scheduleBindingCache = new Map<
   string,
   { at: number; value: { scheduleId: number; sequence: number } | null }
@@ -22,8 +24,11 @@ const scheduleBindingCache = new Map<
 async function resolveScheduleBinding(songId: number, playDate: string) {
   const cacheKey = `${songId}:${playDate}`
   const cached = scheduleBindingCache.get(cacheKey)
-  if (cached && getServerTimestamp() - cached.at < BINDING_CACHE_TTL_MS) {
-    return cached.value
+  if (cached) {
+    const ttl = cached.value ? BINDING_CACHE_TTL_MS : BINDING_MISS_CACHE_TTL_MS
+    if (getServerTimestamp() - cached.at < ttl) {
+      return cached.value
+    }
   }
 
   let binding: { scheduleId: number; sequence: number } | null = null
@@ -53,8 +58,8 @@ async function resolveScheduleBinding(songId: number, playDate: string) {
 }
 
 export default defineEventHandler(async (event) => {
-  // 只有歌曲管理员及以上权限才能对外播报「正在播放」，避免学生端伪造广播
-  requireSongAdmin(event)
+  // 只有命中基准播控权的用户才能对外播报「正在播放」，避免学生端伪造广播
+  await requireBroadcastAuthority(event)
   const user = event.context.user
 
   const body = await readBody(event).catch(() => null)

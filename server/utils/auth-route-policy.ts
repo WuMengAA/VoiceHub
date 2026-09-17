@@ -41,9 +41,10 @@ export const PUBLIC_API_EXACT_ROUTES: readonly RoutePolicy[] = [
   { path: '/api/system/location', methods: GET_METHODS },
   { path: '/api/auth/webauthn/login', methods: ['POST'] },
   { path: '/api/music/resolve-url', methods: ['POST'] },
-  { path: '/api/music/state', methods: ['POST'] },
+  // 旧版音乐状态通道：原为匿名可写，会被用来向全体订阅者伪造「正在播放」。
+  // 现已改为登录 + 播控基准门禁，不再出现在公开路由里。
   { path: '/api/music/websocket', methods: GET_METHODS },
-  // 只放行读取广播状态；写入（POST）必须经登录与歌曲管理员校验
+  // 只放行读取广播状态；写入（POST）必须经登录与播控基准校验
   { path: '/api/music/broadcast', methods: GET_METHODS },
   { path: '/api/sys/time', methods: GET_METHODS }
 ]

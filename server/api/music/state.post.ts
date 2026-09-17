@@ -1,7 +1,18 @@
 import { defineEventHandler, readBody } from 'h3'
 import { broadcastMusicState, broadcastSongChange } from './websocket'
+import { requireBroadcastAuthority } from '~~/server/utils/broadcast-authority'
 
+/**
+ * 旧版音乐状态通道（HarmonyOS 播放端在用），保留原有 SSE 消息类型以免打断既有客户端。
+ *
+ * 安全修正：该路由原先是匿名可写的公共路由（见 auth-route-policy 的历史配置），
+ * 任何人都能往全体 SSE 订阅者推送伪造的「正在播放」，因此改为与新版播控同一套门禁：
+ * 登录 + 命中播控基准（角色基准 / 基准播控人 + 总开关）。
+ * 新的播控端应改用 POST /api/music/broadcast（支持排期绑定、进度外推与统一快照）。
+ */
 export default defineEventHandler(async (event) => {
+  await requireBroadcastAuthority(event)
+
   try {
     const body = await readBody(event)
 

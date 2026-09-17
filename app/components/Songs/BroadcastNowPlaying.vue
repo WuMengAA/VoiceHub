@@ -1,6 +1,6 @@
 <template>
   <!-- 无广播且本机无需控制时完全不占位 -->
-  <div v-if="broadcast || showPublishControl" class="broadcast-bar-wrapper">
+  <div v-if="broadcast || showStaffRow" class="broadcast-bar-wrapper">
     <div v-if="broadcast" :class="{ paused: !broadcast.isPlaying }" class="broadcast-bar">
       <div class="broadcast-cover">
         <img
@@ -56,21 +56,38 @@
       </div>
     </div>
 
-    <!-- 播控端：广播同步被关闭时提供重新开启入口 -->
-    <div v-if="showPublishControl" class="broadcast-control">
+    <!-- 播控端操作条：没有广播时也显示，管理员可在这里指定基准播控人 -->
+    <div v-if="showStaffRow" class="broadcast-control">
       <Icon :size="14" name="music" />
-      <span class="control-text">{{ locale.publishingOff }}</span>
-      <span class="control-hint">{{ locale.publishingOffHint }}</span>
-      <button class="broadcast-btn start" type="button" @click="handleStartBroadcast">
+      <span class="control-text">{{ staffStatusText }}</span>
+      <span class="control-hint">{{ staffHintText }}</span>
+      <button
+        v-if="canPublish && !publishEnabled"
+        class="broadcast-btn start"
+        type="button"
+        @click="handleStartBroadcast"
+      >
         {{ locale.startBroadcast }}
       </button>
+      <button
+        v-if="canEditAuthority"
+        class="broadcast-btn settings"
+        type="button"
+        @click="settingsOpen = true"
+      >
+        <Icon :size="14" name="settings" />
+        <span>{{ locale.settings }}</span>
+      </button>
     </div>
+
+    <BroadcastSettingsModal :show="settingsOpen" @close="settingsOpen = false" />
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import Icon from '~/components/UI/Icon.vue'
+import BroadcastSettingsModal from '~/components/Songs/BroadcastSettingsModal.vue'
 import { convertToHttps } from '~/utils/url'
 import { useLocale } from '~/utils/locale'
 import { useBroadcastSync } from '~/composables/useBroadcastSync'
@@ -83,12 +100,41 @@ const broadcast = broadcastSync.broadcast
 const followEnabled = broadcastSync.followEnabled
 const livePosition = broadcastSync.livePosition
 const progress = broadcastSync.progress
+// 播控资格由服务端判定（角色基准 + 基准播控人 + 总开关），客户端不再用 isAdmin 自行推断
 const canPublish = broadcastSync.canPublish
+const canEditAuthority = broadcastSync.canEditAuthority
+const authorityLoaded = broadcastSync.authorityLoaded
+const authorityEnabled = broadcastSync.authorityEnabled
+const baselineUser = broadcastSync.baselineUser
+const denyReason = broadcastSync.denyReason
+const publishEnabled = broadcastSync.publishEnabled
 
-// 播控端且已关闭同步时才显示重新开启入口，学生端不受影响
-const showPublishControl = computed(
-  () => canPublish.value && !broadcastSync.publishEnabled.value
-)
+const settingsOpen = ref(false)
+
+// 拿到服务端配置就说明当前登录者是歌曲管理员及以上，播控操作条对该角色始终可见：
+// 命中基准时是「播控就绪」，未命中时说明「基准是谁」，避免管理员对着没反应的面板瞎猜
+const showStaffRow = computed(() => authorityLoaded.value)
+
+const staffStatusText = computed(() => {
+  if (!authorityEnabled.value) return locale.value.staffDisabled
+  if (!canPublish.value) {
+    if (denyReason.value === 'NOT_BASELINE' && baselineUser.value) {
+      return locale.value.baselineNotAllowed(baselineUser.value.name)
+    }
+    return locale.value.noPermission
+  }
+  return publishEnabled.value ? locale.value.staffReady : locale.value.publishingOff
+})
+
+const staffHintText = computed(() => {
+  if (!authorityEnabled.value) return ''
+  if (!canPublish.value) {
+    return baselineUser.value
+      ? locale.value.baselineUserHint(baselineUser.value.name)
+      : locale.value.readOnlyHint
+  }
+  return publishEnabled.value ? locale.value.staffReadyHint : locale.value.publishingOffHint
+})
 
 const statusText = computed(() => {
   if (!broadcast.value) return ''
@@ -293,6 +339,10 @@ onUnmounted(() => {
   background: var(--color-accent-alpha-20);
   border-color: var(--color-accent-alpha-40);
   color: var(--color-accent);
+}
+
+.broadcast-btn.settings {
+  margin-left: auto;
 }
 
 .broadcast-control {

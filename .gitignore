@@ -47,3 +47,6 @@ result
 # Tencent Cloud EdgeOne
 .edgeone/*
 .tef_dist/*
+
+# 本地 Agent 工作区记忆（不进版本库）
+.workbuddy/

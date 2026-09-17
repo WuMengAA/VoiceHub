@@ -340,6 +340,14 @@ export const systemSettings = pgTable('SystemSettings', {
   // 平台管理配置
   enabledPlatforms: text('enabledPlatforms').default('["netease","tencent","bilibili","migu"]'),
   platformOrder: text('platformOrder').default('["netease","tencent","bilibili","migu"]'),
+
+  // 播控（学生端同步音乐管理员播放状态）配置
+  // broadcastEnabled: 总开关。关闭后任何人都不能对外播控，学生端也不显示「正在播放」
+  // broadcastBaselineUserId: 基准播控人（必须是歌曲管理员及以上）。
+  //   为空 → 基准为「歌曲管理员」角色，任意歌曲管理员及以上均可播控；
+  //   有值 → 仅该用户可播控（其失效/降权时自动降级回角色基准）
+  broadcastEnabled: boolean('broadcastEnabled').default(true).notNull(),
+  broadcastBaselineUserId: integer('broadcastBaselineUserId'),
 });
 
 // 歌曲黑名单表
