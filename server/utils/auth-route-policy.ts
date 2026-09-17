@@ -43,6 +43,8 @@ export const PUBLIC_API_EXACT_ROUTES: readonly RoutePolicy[] = [
   { path: '/api/music/resolve-url', methods: ['POST'] },
   { path: '/api/music/state', methods: ['POST'] },
   { path: '/api/music/websocket', methods: GET_METHODS },
+  // 只放行读取广播状态；写入（POST）必须经登录与歌曲管理员校验
+  { path: '/api/music/broadcast', methods: GET_METHODS },
   { path: '/api/sys/time', methods: GET_METHODS }
 ]
 

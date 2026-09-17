@@ -1388,6 +1388,20 @@ export const pages = {
       privateNote: 'Admin Only',
       songsCount: (count: number) => `${count} songs`
     },
+    broadcast: {
+      liveTitle: 'On Air',
+      pausedTitle: 'Paused',
+      publisher: (name: string) => `DJ: ${name}`,
+      unknownSong: 'Unknown song',
+      followOn: 'Listen along',
+      followOff: 'Leave',
+      followHint: 'Play in sync with the broadcast',
+      stopBroadcast: 'Stop',
+      startBroadcast: 'Go on air',
+      publishingOff: 'Broadcast sync off',
+      publishingOffHint: 'Your playback is no longer synced to students',
+      schedulePlaying: 'On air'
+    },
     songList: {
       mobileSearchPlaceholder: 'Search requests...',
       searchPlaceholder: 'Search songs',

@@ -821,6 +821,7 @@ VoiceHub/
 │   │   │   ├── RecentSongsModal.vue   # 最近播放弹窗
 │   │   │   ├── RequestForm.vue        # 点歌表单
 │   │   │   ├── ScheduleList.vue       # 排期列表展示
+│   │   │   ├── BroadcastNowPlaying.vue # 校园广播正在播放条（含一起听开关）
 │   │   │   └── SongList.vue           # 歌曲列表
 │   │   ├── UI/                # 通用UI组件
 │   │   │   ├── AudioPlayer/   # 音频播放器组件模块
@@ -872,6 +873,7 @@ VoiceHub/
 │   │   ├── useAudioPlayerControl.ts # 音频播放器控制hooks
 │   │   ├── useAudioPlayerEnhanced.ts # 增强音频播放器hooks
 │   │   ├── useAudioPlayerSync.ts # 音频播放器同步hooks
+│   │   ├── useBroadcastSync.ts  # 校园广播状态同步hooks（订阅/一起听/上报）
 │   │   ├── useAudioQuality.ts  # 音质管理hooks
 │   │   ├── useAudioVisualizer.ts # 音频可视化hooks
 │   │   ├── useAuth.ts          # 认证功能hooks
@@ -1185,6 +1187,8 @@ VoiceHub/
 │   │   │   ├── bind.post.ts         # 绑定MeoW账号
 │   │   │   └── unbind.post.ts       # 解绑MeoW账号
 │   │   ├── music/          # 音乐相关API
+│   │   │   ├── broadcast.get.ts     # 读取校园广播正在播放状态（公开）
+│   │   │   ├── broadcast.post.ts    # 上报校园广播播放状态（歌曲管理员及以上）
 │   │   │   ├── resolve-url.post.ts # 音乐播放链接统一解析
 │   │   │   ├── state.post.ts        # 音乐状态管理
 │   │   │   └── websocket.ts         # 音乐WebSocket连接
@@ -1373,6 +1377,7 @@ VoiceHub/
 │   │   ├── redis.ts        # 可选Redis连接与命名空间工具
 │   │   ├── request-utils.ts # 请求处理通用工具
 │   │   ├── requireSongAdmin.ts # 歌曲管理员权限校验工具
+│   │   ├── broadcast-state.ts # 校园广播正在播放状态（内存权威状态 + 进度外推）
 │   │   ├── song-duration-policy.ts # 歌曲时长归一化与补齐/清空决策
 │   │   ├── song-name-normalize.ts # 歌曲名称标准化匹配工具
 │   │   ├── song-type-resolver.ts # 歌曲类型（语种/曲风）解析工具
@@ -1414,6 +1419,7 @@ VoiceHub/
 ├── tests/                 # 自动化测试
 │   └── server/             # 服务端策略与安全测试
 │       ├── auth-route-policy.test.ts # 强制改密路由策略测试
+│       ├── broadcast-state.test.ts # 校园广播状态与进度外推测试
 │       ├── cors-origin-policy.test.ts # CORS 来源协议匹配测试
 │       ├── important-notification-policy.test.ts # 重要通知策略测试
 │       ├── initial-password-policy.test.ts # 初始密码状态策略测试

@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm'
 import { JWTEnhanced } from '~~/server/utils/jwt-enhanced'
 import { resolveRequirePasswordChange } from '~~/server/utils/system-settings-helper'
 import { createApiError } from '~~/server/utils/apiError'
+import { getBroadcastSnapshot, type BroadcastSnapshot } from '~~/server/utils/broadcast-state'
 
 // 存储WebSocket连接
 const musicConnections = new Map<string, any>()
@@ -19,13 +20,9 @@ interface MusicState {
   timestamp: number
 }
 
-// 广播音乐状态到所有连接的客户端（改进错误处理）
-export function broadcastMusicState(state: MusicState) {
-  const message = JSON.stringify({
-    type: 'music_state_update',
-    data: state
-  })
-
+// 向所有连接推送一条 SSE 消息，并顺带清理已断开的连接
+function pushToConnections(payload: object, label: string) {
+  const message = JSON.stringify(payload)
   const deadConnections: string[] = []
 
   musicConnections.forEach((connection, id) => {
@@ -40,7 +37,7 @@ export function broadcastMusicState(state: MusicState) {
     } catch (error) {
       // 忽略常见的连接错误，避免日志污染
       if (error.code !== 'ECONNRESET' && error.code !== 'EPIPE' && error.code !== 'ENOTFOUND') {
-        console.error(`Failed to send music state to connection ${id}:`, error.message)
+        console.error(`Failed to send ${label} to connection ${id}:`, error.message)
       }
       deadConnections.push(id)
     }
@@ -50,60 +47,24 @@ export function broadcastMusicState(state: MusicState) {
   deadConnections.forEach((id) => musicConnections.delete(id))
 }
 
-// 发送播放列表更新（改进错误处理）
-export function broadcastPlaylistUpdate(playlist: any[]) {
-  const message = JSON.stringify({
-    type: 'playlist_update',
-    data: { playlist }
-  })
-
-  const deadConnections: string[] = []
-
-  musicConnections.forEach((connection, id) => {
-    try {
-      if (connection.destroyed || connection.writableEnded) {
-        deadConnections.push(id)
-        return
-      }
-
-      connection.write(`data: ${message}\n\n`)
-    } catch (error) {
-      if (error.code !== 'ECONNRESET' && error.code !== 'EPIPE' && error.code !== 'ENOTFOUND') {
-        console.error(`Failed to send playlist update to connection ${id}:`, error.message)
-      }
-      deadConnections.push(id)
-    }
-  })
-
-  deadConnections.forEach((id) => musicConnections.delete(id))
+// 广播音乐状态到所有连接的客户端
+export function broadcastMusicState(state: MusicState) {
+  pushToConnections({ type: 'music_state_update', data: state }, 'music state')
 }
 
-// 发送歌曲切换通知（改进错误处理）
+// 发送播放列表更新
+export function broadcastPlaylistUpdate(playlist: any[]) {
+  pushToConnections({ type: 'playlist_update', data: { playlist } }, 'playlist update')
+}
+
+// 发送歌曲切换通知
 export function broadcastSongChange(songInfo: any) {
-  const message = JSON.stringify({
-    type: 'song_change',
-    data: songInfo
-  })
+  pushToConnections({ type: 'song_change', data: songInfo }, 'song change')
+}
 
-  const deadConnections: string[] = []
-
-  musicConnections.forEach((connection, id) => {
-    try {
-      if (connection.destroyed || connection.writableEnded) {
-        deadConnections.push(id)
-        return
-      }
-
-      connection.write(`data: ${message}\n\n`)
-    } catch (error) {
-      if (error.code !== 'ECONNRESET' && error.code !== 'EPIPE' && error.code !== 'ENOTFOUND') {
-        console.error(`Failed to send song change to connection ${id}:`, error.message)
-      }
-      deadConnections.push(id)
-    }
-  })
-
-  deadConnections.forEach((id) => musicConnections.delete(id))
+// 广播校园广播「正在播放」状态；snapshot 为 null 表示广播已结束
+export function broadcastBroadcastState(snapshot: BroadcastSnapshot | null) {
+  pushToConnections({ type: 'broadcast_state', data: snapshot }, 'broadcast state')
 }
 
 // WebSocket事件处理器
@@ -173,6 +134,14 @@ export default defineEventHandler(async (event) => {
         userId,
         timestamp: Date.now()
       }
+    })}\n\n`
+  )
+
+  // 新订阅者立即拿到当前广播状态，无需等待下一次上报（学生端首屏与中途进入都能对齐）
+  response.write(
+    `data: ${JSON.stringify({
+      type: 'broadcast_state',
+      data: getBroadcastSnapshot()
     })}\n\n`
   )
 

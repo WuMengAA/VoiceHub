@@ -1397,6 +1397,20 @@ export const pages = {
       privateNote: '仅管理员可见',
       songsCount: (count: number) => `${count}首`
     },
+    broadcast: {
+      liveTitle: '正在广播',
+      pausedTitle: '已暂停',
+      publisher: (name: string) => `播控：${name}`,
+      unknownSong: '未知歌曲',
+      followOn: '一起听',
+      followOff: '退出一起听',
+      followHint: '打开后本机将跟随广播进度播放',
+      stopBroadcast: '结束广播',
+      startBroadcast: '开启广播同步',
+      publishingOff: '广播同步已关闭',
+      publishingOffHint: '本机播放不再同步给学生端',
+      schedulePlaying: '正在播放'
+    },
     songList: {
       mobileSearchPlaceholder: '搜索点播记录...',
       searchPlaceholder: '输入想要搜索的歌曲',

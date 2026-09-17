@@ -214,6 +214,9 @@
           </ClientOnly>
         </div>
 
+        <!-- 校园广播正在播放条：学生端同步管理员播放的歌曲与进度 -->
+        <SongsBroadcastNowPlaying />
+
         <!-- 内容区域 -->
         <div class="tab-content-container">
           <ClientOnly>
@@ -843,6 +846,7 @@ import Icon from '~/components/UI/Icon.vue'
 import AppSpinner from '~/components/UI/Common/AppSpinner.vue'
 import ConfirmDialog from '~/components/UI/ConfirmDialog.vue'
 import AppLoadingScreen from '~/components/UI/AppLoadingScreen.vue'
+import SongsBroadcastNowPlaying from '~/components/Songs/BroadcastNowPlaying.vue'
 
 import { useNotifications } from '~/composables/useNotifications'
 import { useSiteConfig } from '~/composables/useSiteConfig'

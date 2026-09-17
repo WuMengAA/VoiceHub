@@ -264,6 +264,7 @@ import { useAudioPlayerControl } from '~/composables/useAudioPlayerControl'
 import { useAudioPlayerSync } from '~/composables/useAudioPlayerSync'
 import { useAudioQuality } from '~/composables/useAudioQuality'
 import { useAudioPlayerEnhanced } from '~/composables/useAudioPlayerEnhanced'
+import { useBroadcastSync } from '~/composables/useBroadcastSync'
 import { useMediaSession } from '~/composables/useMediaSession'
 import { getBilibiliUrl } from '~/utils/url'
 import { scrobbleSong } from '~/utils/neteaseApi'
@@ -306,8 +307,28 @@ const emit = defineEmits(['close', 'ended', 'error', 'songChange'])
 // 使用 composables
 const control = useAudioPlayerControl()
 const sync = useAudioPlayerSync()
+const broadcast = useBroadcastSync()
 const { getQualityLabel, getQuality, getQualityOptions, saveQuality } = useAudioQuality()
 const enhanced = useAudioPlayerEnhanced()
+
+// 播控端：把本机播放状态上报为校园广播，学生端据此同步歌曲与进度
+const publishBroadcast = (options: { immediate?: boolean } = {}) => {
+  if (!broadcast.canPublish.value || !props.song?.id) return
+  broadcast.publish(
+    {
+      songId: props.song.id,
+      title: props.song.title,
+      artist: props.song.artist,
+      cover: props.song.cover || null,
+      musicPlatform: props.song.musicPlatform || null,
+      musicId: props.song.musicId || null,
+      duration: control.duration.value || 0,
+      position: control.currentTime.value || 0,
+      isPlaying: control.isPlaying.value
+    },
+    options
+  )
+}
 const mediaSession = useMediaSession()
 
 // 组件引用
@@ -342,6 +363,7 @@ const NETEASE_SCROBBLE_MIN_SECONDS = 30
 const NETEASE_SCROBBLE_SHORT_AUDIO_RATIO = 0.8
 const MAX_NETEASE_SCROBBLE_RETRIES = 3
 const failedPlaybackSources = ref<string[]>([])
+const lastObservedTime = ref(0) // 上一次 timeupdate 的进度，用于识别进度跳变
 const neteaseScrobbleReportedKey = ref<string | null>(null)
 const neteaseScrobblePendingKey = ref<string | null>(null)
 const neteaseScrobbleRetryCount = ref(0)
@@ -737,6 +759,13 @@ const handleTimeUpdate = () => {
   const currentTime = audioPlayer.value.currentTime
   const duration = audioPlayer.value.duration
 
+  // 进度跳变说明发生了跳转（点击进度条、拖动、歌词跳转），需要立即上报给广播订阅者
+  const timeJump = Math.abs(currentTime - lastObservedTime.value)
+  lastObservedTime.value = currentTime
+  if (timeJump > 3) {
+    publishBroadcast({ immediate: true })
+  }
+
   control.onTimeUpdate(currentTime)
 
   // 更新 Media Session 位置状态
@@ -749,6 +778,8 @@ const handleTimeUpdate = () => {
   if (control.isPlaying.value) {
     sync.throttledProgressUpdate(currentTime, duration, control.isPlaying.value)
     void tryScrobbleNeteaseSong(currentTime, duration)
+    // 广播跟随靠「上报锚点 + 本地时钟外推」，进度按节流间隔上报即可
+    publishBroadcast()
   }
 }
 
@@ -785,6 +816,8 @@ const handlePlay = () => {
     volume: 1,
     playlistIndex: sync.globalAudioPlayer.getCurrentPlaylistIndex().value
   })
+
+  publishBroadcast({ immediate: true })
 }
 
 const handlePause = () => {
@@ -819,6 +852,8 @@ const handlePause = () => {
     volume: 1,
     playlistIndex: sync.globalAudioPlayer.getCurrentPlaylistIndex().value
   })
+
+  publishBroadcast({ immediate: true })
 }
 
 const handleDurationChange = async () => {
@@ -834,6 +869,33 @@ const handleDurationChange = async () => {
     if (switchedSource) return
   }
 }
+
+// 应用外部请求的定位（广播跟随在切歌后要求跳到对应进度）
+const applyPendingSeek = async () => {
+  if (!audioPlayer.value) return
+  if (sync.globalAudioPlayer.getPendingSeek().value === null) return
+  // 音频尚未就绪时保持请求挂起，交由 loadedmetadata 流程处理
+  if (audioPlayer.value.readyState < 1) return
+
+  const target = sync.globalAudioPlayer.consumePendingSeek()
+  if (target === null) return
+
+  try {
+    await control.seek(target)
+    if (!control.isPlaying.value) {
+      await control.play()
+    }
+  } catch (error) {
+    console.error('应用广播定位失败:', error)
+  }
+}
+
+watch(
+  () => sync.globalAudioPlayer.getPendingSeek().value,
+  (pending) => {
+    if (pending !== null) void applyPendingSeek()
+  }
+)
 
 const handleLoaded = async () => {
   if (!audioPlayer.value) return
@@ -852,6 +914,9 @@ const handleLoaded = async () => {
   }
 
   control.onLoaded(audioPlayer.value.duration)
+
+  // 广播跟随：切歌完成后落到目标进度
+  void applyPendingSeek()
 
   // 更新 Media Session 元数据
   if (mediaSession.isSupported.value && props.song) {
@@ -1067,6 +1132,8 @@ const handleEnded = () => {
 
   if (isOffMode || isOrderFinished) {
     showFullscreenLyrics.value = false
+    // 本曲播完且不再续播，清空广播状态，避免学生端停留在「已暂停」
+    void broadcast.clearBroadcast()
   }
   emit('ended')
 }

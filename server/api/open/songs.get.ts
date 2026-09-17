@@ -3,6 +3,7 @@ import { db } from '~/drizzle/db'
 import { playTimes, schedules, songs, users, votes } from '~/drizzle/schema'
 import { and, asc, count, desc, eq, inArray, like, or } from 'drizzle-orm'
 import { formatDateTime } from '~/utils/timeUtils'
+import { getBroadcastAnnouncement } from '~~/server/utils/broadcast-state'
 
 export default defineEventHandler(async (event) => {
   try {
@@ -257,6 +258,7 @@ export default defineEventHandler(async (event) => {
       success: true,
       data: {
         songs: formattedSongs,
+        nowPlaying: getBroadcastAnnouncement(),
         pagination: {
           page,
           limit,
