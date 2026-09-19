@@ -1,7 +1,6 @@
 <template>
   <audio
     ref="audioPlayer"
-    :key="audioKey"
     :src="audioSrc"
     :crossorigin="crossOriginVal"
     :referrerpolicy="referrerPolicyVal"
@@ -50,10 +49,6 @@ const referrerPolicyVal = computed(() => {
 })
 const audioSrc = computed(() => {
   return props.song?.musicUrl || undefined
-})
-const audioKey = computed(() => {
-  // 当平台改变时，使用不同的 key 强制重新创建元素
-  return props.song?.musicPlatform || 'default'
 })
 
 // 错误消息常量，避免使用魔法字符串
