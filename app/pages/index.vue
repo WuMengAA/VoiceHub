@@ -3480,9 +3480,10 @@ if (
     background: var(--overlay-15);
   }
 
-  /* 移动端的主页面里不需要写学校名，保持简约*/
+  /* 竖屏/移动端同样展示站点标题（横屏已有的 head 下放），仅收紧间距避免溢出 */
   .site-title {
-    display: none;
+    margin: 1.5rem 0;
+    padding: 0 1rem;
   }
 
   .school-logo {
