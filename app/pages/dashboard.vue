@@ -26,19 +26,54 @@
           class="flex-1 flex flex-col h-screen overflow-hidden lg:ml-64 relative bg-bg-primary text-text-primary"
         >
           <header
-            class="h-16 shrink-0 flex items-center justify-between px-4 md:px-8 border-b border-border-secondary bg-bg-primary-60 backdrop-blur-xl z-30"
+            class="h-16 shrink-0 flex items-center justify-between gap-2 px-4 md:px-8 border-b border-border-secondary bg-bg-primary-60 backdrop-blur-xl z-30"
           >
-            <div class="flex items-center gap-3">
+            <div class="flex items-center gap-2 min-w-0 flex-1">
               <button
-                class="lg:hidden p-2 text-text-tertiary hover:bg-bg-tertiary rounded-lg transition-colors"
+                class="lg:hidden p-2 -ml-2 text-text-tertiary hover:bg-bg-tertiary rounded-lg transition-colors shrink-0"
                 @click="toggleSidebar"
               >
                 <Menu :size="20" />
               </button>
-              <h1 class="text-xl font-bold tracking-tight">{{ getPageTitle() }}</h1>
+              <!-- 移动端品牌区：横屏在侧边栏，竖屏补到顶部 -->
+              <div class="lg:hidden flex items-center gap-2 min-w-0 shrink-0">
+                <img src="/assets/logo.png" alt="VoiceHub Logo" class="w-7 h-7 object-contain" >
+                <div class="flex items-baseline gap-1.5 min-w-0">
+                  <span class="font-bold text-sm text-text-primary leading-none tracking-tight">VoiceHub</span>
+                  <span
+                    class="text-[10px] px-1.5 py-0.5 rounded bg-primary-hover-10 text-primary font-bold leading-none shrink-0"
+                  >校园广播</span>
+                </div>
+              </div>
+              <h1 class="text-lg font-bold tracking-tight truncate">{{ getPageTitle() }}</h1>
             </div>
-            <div class="flex items-center gap-4">
-              <!-- 这里可以添加顶部操作按钮 -->
+            <div class="flex items-center gap-3 shrink-0">
+              <!-- 移动端管理员身份：竖屏补到顶部，桌面端侧边栏已含 -->
+              <div
+                v-if="currentUser"
+                class="lg:hidden flex items-center gap-2 p-1.5 rounded-lg bg-bg-secondary-50 border border-border-secondary-50"
+              >
+                <img
+                  v-if="currentUser.avatar && !avatarError"
+                  :src="currentUser.avatar"
+                  class="w-9 h-9 rounded-lg object-cover border border-border-tertiary shrink-0"
+                  @error="avatarError = true"
+                >
+                <div
+                  v-else
+                  class="w-9 h-9 rounded-lg bg-bg-tertiary flex items-center justify-center text-text-tertiary font-bold border border-border-tertiary shrink-0"
+                >
+                  {{ (currentUser.name || '管').charAt(0) }}
+                </div>
+                <div class="flex flex-col justify-center min-w-0">
+                  <p class="text-xs font-black truncate text-text-primary leading-tight">{{ currentUser.name }}</p>
+                  <p
+                    class="text-[10px] text-text-tertiary truncate uppercase tracking-wider font-medium leading-tight"
+                  >
+                    {{ getRoleDisplayName(currentUser.role || 'ADMIN') }}
+                  </p>
+                </div>
+              </div>
             </div>
           </header>
 
@@ -232,6 +267,13 @@ const activeTab = ref('overview')
 useScrollMemory(() => activeTab.value)
 
 const currentUser = ref(null)
+const avatarError = ref(false)
+watch(
+  () => currentUser.value?.avatar,
+  () => {
+    avatarError.value = false
+  }
+)
 const sidebarOpen = ref(false)
 const showBackToTop = ref(false)
 const beforeNavigateHooks = ref([])
