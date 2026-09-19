@@ -2,6 +2,7 @@ import { computed, readonly, ref } from 'vue'
 import { getSyncedTimestamp, useSyncedTime } from '~/composables/useSyncedTime'
 import { useAuth } from '~/composables/useAuth'
 import { useAudioPlayer } from '~/composables/useAudioPlayer'
+import type { PlayableSong } from '~/composables/useAudioPlayer'
 import { useAudioPlayerControl } from '~/composables/useAudioPlayerControl'
 import { useSongs } from '~/composables/useSongs'
 
@@ -62,19 +63,25 @@ export interface BroadcastReport {
 
 // 进度类上报的节流间隔：播放中的进度靠上报锚点 + 本地时钟外推，无需高频上报
 const PUBLISH_THROTTLE_MS = 5000
-// 跟随收听的漂移容忍度（秒）：允许 3 秒误差，差得不多就不校正，避免频繁 seek 显得突兀
-const FOLLOW_DRIFT_TOLERANCE = 3
-// 两次校正之间的最小间隔（毫秒）：拉大到 10 秒，正常 1x 播放下几乎不会触发硬同步
-const FOLLOW_ALIGN_INTERVAL_MS = 10000
+// 跟随收听的漂移容忍度（秒）：允许 2 秒误差，差得不多就不校正，避免频繁 seek 显得突兀
+const FOLLOW_DRIFT_TOLERANCE = 2
+// 两次校正之间的最小间隔（毫秒）：6 秒，兼顾同步灵敏度与 seek 频率
+const FOLLOW_ALIGN_INTERVAL_MS = 6000
 // 跟随播放失败后的重试冷却时长
 const FOLLOW_RETRY_COOLDOWN_MS = 60000
-// SSE 断开后的兜底轮询间隔
-const POLL_INTERVAL_MS = 15000
-// 收听心跳间隔：告诉服务端「这个页面还在听」
+// SSE 断开后的兜底轮询间隔：SSE 在线时不轮询，断开后 20s 一次（比 15s 少 25% 请求）
+const POLL_INTERVAL_MS = 20000
+// 收听心跳间隔：告诉服务端「这个页面还在听」（服务端 TTL 45s，30s 续期留有裕量）
 const LISTENER_HEARTBEAT_MS = 30000
 // 广播状态视为失效的空窗：略大于服务端的播放中空窗（90s），
 // 播控端掉线后学生端能自行结束「正在播放」，不必等到下一次拉取
 const BROADCAST_IDLE_TIMEOUT_MS = 95000
+// SSE 重连指数退避：Vercel 上连接约 60s 被杀，全校同时按固定 5s 重连会形成风暴，
+// 改为 1s 起逐次翻倍、上限 30s，把重连高峰摊开
+const RECONNECT_BASE_MS = 1000
+const RECONNECT_MAX_MS = 30000
+// 跟随播放解析失败时的提示冷却，避免每秒刷屏
+const FOLLOW_WARN_COOLDOWN_MS = 60000
 
 const FOLLOW_STORAGE_KEY = 'voicehub-broadcast-follow'
 const PUBLISH_STORAGE_KEY = 'voicehub-broadcast-publishing'
@@ -141,6 +148,8 @@ const tickNow = ref(0)
 
 let eventSource: EventSource | null = null
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+// SSE 连续重连次数：用于指数退避，连接建立成功后归零
+let reconnectAttempts = 0
 let tickTimer: ReturnType<typeof setInterval> | null = null
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null
@@ -151,6 +160,8 @@ let lastAlignAt = 0
 // 跟随播放失败的歌曲与其失败时间，用于退避重试
 let followFailedSongId: number | null = null
 let followFailedAt = 0
+// 跟随播放解析失败的最后提示时间（带冷却，避免刷屏）
+let lastFollowWarnAt = 0
 let lastPublishAt = 0
 let publishTimer: ReturnType<typeof setTimeout> | null = null
 let pendingReport: BroadcastReport | null = null
@@ -288,6 +299,8 @@ export const useBroadcastSync = () => {
     try {
       const data = await $fetch<{ broadcast: BroadcastState | null }>('/api/music/broadcast')
       applySnapshot(data?.broadcast ?? null)
+      // 轮询兜底场景同样立即对齐（SSE 断开时保持同步灵敏度）
+      void alignFollowPlayback()
     } catch (error) {
       console.error('获取广播状态失败:', error)
     }
@@ -439,6 +452,8 @@ export const useBroadcastSync = () => {
   const handleMessage = (payload: any) => {
     if (payload?.type === 'broadcast_state') {
       applySnapshot(payload.data ?? null)
+      // SSE 消息到达即触发跟随对齐，不必等 1s tick：切歌/播放/暂停响应更灵敏
+      void alignFollowPlayback()
       return
     }
     if (payload?.type === 'connection_established') {
@@ -449,10 +464,12 @@ export const useBroadcastSync = () => {
 
   const scheduleReconnect = () => {
     if (reconnectTimer) return
+    const delay = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * 2 ** reconnectAttempts)
+    reconnectAttempts++
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null
       openEventSource()
-    }, 5000)
+    }, delay)
   }
 
   const openEventSource = () => {
@@ -475,6 +492,8 @@ export const useBroadcastSync = () => {
 
     eventSource.onopen = () => {
       connected.value = true
+      // 连接成功，重连计数归零，下次断线仍从 1s 开始退避
+      reconnectAttempts = 0
       if (reconnectTimer) {
         clearTimeout(reconnectTimer)
         reconnectTimer = null
@@ -543,6 +562,7 @@ export const useBroadcastSync = () => {
   const disconnect = () => {
     connectionStarted = false
     connected.value = false
+    reconnectAttempts = 0
     if (eventSource) {
       eventSource.close()
       eventSource = null
@@ -597,8 +617,19 @@ export const useBroadcastSync = () => {
       ) {
         return
       }
-      const song = resolveBroadcastSong(current.songId)
-      if (!song) return
+      const song = resolveBroadcastSong(current)
+      if (!song) {
+        // 广播不携带可播信息（无平台/无 id）：提示一次并进入退避，避免静默失败
+        if (getSyncedTimestamp() - lastFollowWarnAt > FOLLOW_WARN_COOLDOWN_MS) {
+          lastFollowWarnAt = getSyncedTimestamp()
+          if (window.$showNotification) {
+            window.$showNotification('当前广播歌曲暂不支持跟随播放', 'info')
+          }
+        }
+        followFailedSongId = current.songId
+        followFailedAt = getSyncedTimestamp()
+        return
+      }
       lastAlignAt = getSyncedTimestamp()
       const started = globalAudioPlayer.playSong(song)
       if (!started) {
@@ -640,7 +671,7 @@ export const useBroadcastSync = () => {
     const localSong = globalAudioPlayer.getCurrentSong().value
     if (localSong && String(localSong.id) === String(current.songId)) return
 
-    const song = resolveBroadcastSong(current.songId)
+    const song = resolveBroadcastSong(current)
     if (!song) return
     if (followFailedSongId === current.songId && getSyncedTimestamp() - followFailedAt < FOLLOW_RETRY_COOLDOWN_MS) {
       return
@@ -652,13 +683,30 @@ export const useBroadcastSync = () => {
     }
   }
 
-  /** 从学生端已加载的排期里找出广播中的歌曲，用于跟随播放 */
-  const resolveBroadcastSong = (songId: number) => {
+  /**
+   * 解析广播中的歌曲用于跟随播放（一起听协同）。
+   * 优先用学生端已加载排期里的完整歌曲对象（可能带 playUrl 等额外信息）；
+   * 找不到时直接使用广播快照自带的音乐信息构造可播放对象——
+   * 广播推送「正在播放」时本就携带 musicPlatform/musicId/封面等，学生端不依赖排期也能协同播放。
+   */
+  const resolveBroadcastSong = (current: BroadcastState): PlayableSong | null => {
     const songs = useSongs()
     const list = songs.publicSchedules?.value || []
     for (const item of list) {
-      if (item?.song && String(item.song.id) === String(songId)) {
+      if (item?.song && String(item.song.id) === String(current.songId)) {
         return item.song
+      }
+    }
+    // 兜底：广播快照自带音乐信息，直接构造成可播放对象
+    if (current.musicPlatform && current.musicId) {
+      return {
+        id: current.songId,
+        title: current.title || '',
+        artist: current.artist || '',
+        cover: current.cover,
+        duration: current.duration > 0 ? current.duration : undefined,
+        musicPlatform: current.musicPlatform,
+        musicId: current.musicId
       }
     }
     return null

@@ -213,7 +213,10 @@ export default defineEventHandler(async (event) => {
     cleanup()
   })
 
-  // 定期发送心跳（改进错误处理）
+  // 定期发送心跳（改进错误处理）。
+  // 间隔 45s：Vercel 等 serverless 平台对函数最长执行时间有上限（本项目配 60s），
+  // 连接期的心跳次数从 2 次降到 1 次，省一半的服务端自检开销；
+  // 收听者续期仍有客户端每 30s 的独立心跳兜底，不影响在线人数统计。
   const heartbeatInterval = setInterval(async () => {
     if (!musicConnections.has(connectionId)) {
       clearInterval(heartbeatInterval)
@@ -249,5 +252,5 @@ export default defineEventHandler(async (event) => {
       }
       cleanup()
     }
-  }, 30000) // 每30秒发送一次心跳
+  }, 45000) // 每45秒发送一次心跳
 })
