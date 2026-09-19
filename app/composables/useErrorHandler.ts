@@ -1,8 +1,8 @@
 import { useAuth } from './useAuth'
+import { redirectToLogin } from '~/utils/authRedirect'
 
 // 防抖机制
 let isHandling401 = false
-const lastHandle401Time = 0
 const HANDLE_401_DEBOUNCE_TIME = 2000
 
 export const useErrorHandler = () => {
@@ -82,9 +82,9 @@ export const useErrorHandler = () => {
           toast.error(errorMessage)
         }
 
-        // 跳转到登录页
+        // 跳转到登录页（统一守卫，2s 去重，避免与中间件/initAuth 并发双跳）
         if (import.meta.client) {
-          await navigateTo('/login')
+          await redirectToLogin()
         }
       }
     } finally {
