@@ -62,10 +62,10 @@ export interface BroadcastReport {
 
 // 进度类上报的节流间隔：播放中的进度靠上报锚点 + 本地时钟外推，无需高频上报
 const PUBLISH_THROTTLE_MS = 5000
-// 跟随收听的漂移容忍度（秒），超过才重新对齐，避免频繁 seek 造成断续
-const FOLLOW_DRIFT_TOLERANCE = 4
-// 两次对齐之间的最小间隔（毫秒）
-const FOLLOW_ALIGN_INTERVAL_MS = 5000
+// 跟随收听的漂移容忍度（秒）：允许 3 秒误差，差得不多就不校正，避免频繁 seek 显得突兀
+const FOLLOW_DRIFT_TOLERANCE = 3
+// 两次校正之间的最小间隔（毫秒）：拉大到 10 秒，正常 1x 播放下几乎不会触发硬同步
+const FOLLOW_ALIGN_INTERVAL_MS = 10000
 // 跟随播放失败后的重试冷却时长
 const FOLLOW_RETRY_COOLDOWN_MS = 60000
 // SSE 断开后的兜底轮询间隔

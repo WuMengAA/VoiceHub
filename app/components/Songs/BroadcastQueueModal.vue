@@ -158,6 +158,7 @@ import { useLocale } from '~/utils/locale'
 import { useToast } from '~/composables/useToast'
 import { useBroadcastSync } from '~/composables/useBroadcastSync'
 import { useSongs } from '~/composables/useSongs'
+import { getBeijingTimeISOString } from '~/utils/timeUtils'
 
 const props = defineProps({
   show: { type: Boolean, default: false }
@@ -218,8 +219,15 @@ const removeSong = (index) => {
 const clearSelection = () => {
   selectedSongs.value = []
 }
+
+/** 只取「今日排期」作为播放单候选：播放单按当日排期编排，不应混入其他日期的歌 */
+const todaySchedules = (schedules) => {
+  const todayStr = getBeijingTimeISOString().slice(0, 10)
+  return (schedules || []).filter((s) => s.playDate === todayStr)
+}
+
 const loadCandidates = async () => {
-  const schedules = songsStore.publicSchedules?.value || []
+  const schedules = todaySchedules(songsStore.publicSchedules?.value)
   const extract =
     schedules.length > 0
       ? songsStore.extractSongsFromSchedules(schedules)
@@ -238,7 +246,7 @@ const loadCandidates = async () => {
   loading.value = true
   try {
     await songsStore.fetchPublicSchedules()
-    const list = songsStore.extractSongsFromSchedules(songsStore.publicSchedules?.value || [])
+    const list = songsStore.extractSongsFromSchedules(todaySchedules(songsStore.publicSchedules?.value || []))
     candidates.value = list
       .map((song) => ({
         songId: Number(song.id),
