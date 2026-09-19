@@ -8,6 +8,9 @@
 
     <ImportantNotificationModal />
 
+    <!-- 版本更新提示（顶部醒目 banner，自动对比版本号） -->
+    <VersionUpdateBanner />
+
     <!-- 微信/QQ 内置浏览器账号密码登录后的绑定引导 -->
     <OAuthBindReminderModal />
 
@@ -36,6 +39,7 @@ import { useAudioPlayer } from '~/composables/useAudioPlayer'
 import { useAuth } from '~/composables/useAuth'
 import { useImportantNotification } from '~/composables/useImportantNotification'
 import ImportantNotificationModal from '~/components/UI/ImportantNotificationModal.vue'
+import VersionUpdateBanner from '~/components/UI/VersionUpdateBanner.vue'
 import OAuthBindReminderModal from '~/components/Auth/OAuthBindReminderModal.vue'
 import { useRoute } from 'vue-router'
 

@@ -1,5 +1,6 @@
 import wasm from 'vite-plugin-wasm'
 import { fileURLToPath } from 'url'
+import { readFileSync } from 'node:fs'
 
 // 解析自定义 SEO 和 PWA 配置
 let customSeoConfig: { title?: string; shortName?: string; description?: string; logo?: string } =
@@ -20,6 +21,17 @@ const siteDescription =
   process.env.NUXT_PUBLIC_SITE_DESCRIPTION ||
   '校园广播站点歌系统 - 让你的声音被听见'
 const siteLogo = customSeoConfig.logo || process.env.NUXT_PUBLIC_SITE_LOGO || '/themes/ClassicDark/logo.svg'
+
+// 读取应用版本号（package.json version），注入运行时配置供前端做“版本更新提示”对比
+const appVersion = (() => {
+  try {
+    const pkgPath = fileURLToPath(new URL('./package.json', import.meta.url))
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'))
+    return (pkg.version as string) || ''
+  } catch {
+    return ''
+  }
+})()
 
 const readNumberEnv = (value: string | undefined, fallback: number): number => {
   if (!value) return fallback
@@ -607,6 +619,7 @@ export default defineNuxtConfig({
       siteTitle,
       siteLogo,
       siteDescription,
+      appVersion,
       isNetlify: process.env.NETLIFY === 'true',
       sentry: {
         dsn: process.env.NUXT_PUBLIC_SENTRY_DSN || frontendSentryDsnDefault,
