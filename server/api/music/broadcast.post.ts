@@ -2,10 +2,18 @@ import { defineEventHandler, readBody } from 'h3'
 import { client } from '~/drizzle/db'
 import { createApiError } from '~~/server/utils/apiError'
 import { SERVER_ERROR_CODES } from '~~/server/config/constants'
-import { requireBroadcastAuthority } from '~~/server/utils/broadcast-authority'
+import {
+  markBroadcastActivity,
+  maybeReleaseStaleBaseline,
+  requireBroadcastAuthority
+} from '~~/server/utils/broadcast-authority'
 import { getBeijingTimeISOString } from '~/utils/timeUtils'
 import { getServerTimestamp } from '~~/server/utils/serverTime'
-import { applyBroadcastReport, stopBroadcast } from '~~/server/utils/broadcast-state'
+import {
+  advanceBroadcast,
+  applyBroadcastReport,
+  stopBroadcast
+} from '~~/server/utils/broadcast-state'
 import { broadcastBroadcastState } from './websocket'
 
 // 歌曲 → 当日排期的绑定结果缓存，避免每次进度上报都查库；排期可能被临时调整，因此限时生效
@@ -67,10 +75,20 @@ export default defineEventHandler(async (event) => {
     throw createApiError(400, SERVER_ERROR_CODES.COMMON_INVALID_PARAMS, '无效的请求数据')
   }
 
+  // 一次成功的播控动作就是一次心跳：自动释放与接管判定都以此为准
+  markBroadcastActivity(user?.id)
+
   if (body.action === 'stop') {
-    stopBroadcast()
+    stopBroadcast('STOPPED')
     broadcastBroadcastState(null)
     return { success: true, broadcast: null, serverTime: getServerTimestamp() }
+  }
+
+  // 手动切下一首：播放单里还有就推进，播控端随后会收到 songId 变化的快照
+  if (body.action === 'next') {
+    const snapshot = advanceBroadcast('SWITCHED')
+    broadcastBroadcastState(snapshot)
+    return { success: true, broadcast: snapshot, serverTime: getServerTimestamp() }
   }
 
   const songId = Number(body.songId)
@@ -99,6 +117,9 @@ export default defineEventHandler(async (event) => {
   })
 
   broadcastBroadcastState(snapshot)
+
+  // 没有在播内容时顺手看看基准人是不是已经跑路了（内部有节流）
+  await maybeReleaseStaleBaseline({ broadcastActive: Boolean(snapshot) })
 
   return { success: true, broadcast: snapshot, serverTime: getServerTimestamp() }
 })

@@ -19,9 +19,18 @@
           <span v-if="broadcast.publisherName" class="status-publisher">
             · {{ locale.publisher(broadcast.publisherName) }}
           </span>
+          <span v-if="listenerCount > 0" class="status-listeners">
+            · {{ locale.listenerCount(listenerCount) }}
+          </span>
         </div>
 
         <div class="broadcast-title" :title="titleText">{{ titleText }}</div>
+
+        <div v-if="broadcast.nextUp" class="broadcast-next">
+          <span class="next-label">{{ locale.nextUp }}</span>
+          <span class="next-title">{{ broadcast.nextUp.title }}</span>
+          <span class="next-artist">{{ broadcast.nextUp.artist }}</span>
+        </div>
 
         <div class="broadcast-progress">
           <div class="broadcast-progress-fill" :style="{ width: progressPercent }" />
@@ -43,6 +52,16 @@
         >
           <Icon :size="14" :name="followEnabled ? 'pause' : 'play'" />
           <span>{{ followEnabled ? locale.followOff : locale.followOn }}</span>
+        </button>
+        <button
+          v-if="canPublish && broadcast.nextUp"
+          :title="locale.playNext"
+          class="broadcast-btn next"
+          type="button"
+          @click="handlePlayNext"
+        >
+          <Icon :size="14" name="skip-forward" />
+          <span>{{ locale.playNext }}</span>
         </button>
         <button
           v-if="canPublish"
@@ -70,6 +89,32 @@
         {{ locale.startBroadcast }}
       </button>
       <button
+        v-if="canTakeover"
+        class="broadcast-btn takeover"
+        type="button"
+        @click="handleTakeover"
+      >
+        <Icon :size="14" name="repeat" />
+        <span>{{ locale.takeover }}</span>
+      </button>
+      <button
+        v-if="canPublish && baselineUserId"
+        class="broadcast-btn release"
+        type="button"
+        @click="handleRelease"
+      >
+        <span>{{ locale.release }}</span>
+      </button>
+      <button
+        v-if="canPublish"
+        class="broadcast-btn queue"
+        type="button"
+        @click="queueOpen = true"
+      >
+        <Icon :size="14" name="list" />
+        <span>{{ queueLabel }}</span>
+      </button>
+      <button
         v-if="canEditAuthority"
         class="broadcast-btn settings"
         type="button"
@@ -81,6 +126,7 @@
     </div>
 
     <BroadcastSettingsModal :show="settingsOpen" @close="settingsOpen = false" />
+    <BroadcastQueueModal :show="queueOpen" @close="queueOpen = false" />
   </div>
 </template>
 
@@ -88,6 +134,8 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import Icon from '~/components/UI/Icon.vue'
 import BroadcastSettingsModal from '~/components/Songs/BroadcastSettingsModal.vue'
+import BroadcastQueueModal from '~/components/Songs/BroadcastQueueModal.vue'
+import { useToast } from '~/composables/useToast'
 import { convertToHttps } from '~/utils/url'
 import { useLocale } from '~/utils/locale'
 import { useBroadcastSync } from '~/composables/useBroadcastSync'
@@ -95,6 +143,7 @@ import { useBroadcastSync } from '~/composables/useBroadcastSync'
 const { songs: songsLocale } = useLocale()
 const locale = computed(() => songsLocale.value?.broadcast || {})
 const broadcastSync = useBroadcastSync()
+const toast = useToast()
 
 const broadcast = broadcastSync.broadcast
 const followEnabled = broadcastSync.followEnabled
@@ -108,8 +157,22 @@ const authorityEnabled = broadcastSync.authorityEnabled
 const baselineUser = broadcastSync.baselineUser
 const denyReason = broadcastSync.denyReason
 const publishEnabled = broadcastSync.publishEnabled
+const canTakeover = broadcastSync.canTakeover
+const takeoverDenyReason = broadcastSync.takeoverDenyReason
+const listenerCount = broadcastSync.listenerCount
+const queue = broadcastSync.queue
 
 const settingsOpen = ref(false)
+const queueOpen = ref(false)
+
+/** 当前是否被指定了基准播控人（决定「交还播控权」按钮要不要出现） */
+const baselineUserId = computed(
+  () => broadcastSync.authorityConfig.value?.authority.effectiveBaselineUserId ?? null
+)
+
+const queueLabel = computed(() =>
+  queue.value.length > 0 ? locale.value.queueTotal(queue.value.length) : locale.value.queueOpen
+)
 
 // 拿到服务端配置就说明当前登录者是歌曲管理员及以上，播控操作条对该角色始终可见：
 // 命中基准时是「播控就绪」，未命中时说明「基准是谁」，避免管理员对着没反应的面板瞎猜
@@ -161,12 +224,48 @@ const toggleFollow = () => {
   broadcastSync.setFollowEnabled(!followEnabled.value)
 }
 
+const takeoverBusy = computed(() => takeoverDenyReason.value === 'BASELINE_ACTIVE')
+
 const handleStopBroadcast = () => {
   void broadcastSync.stopPublish()
 }
 
 const handleStartBroadcast = () => {
   broadcastSync.setPublishEnabled(true)
+}
+
+/** 手动切下一首：服务端会把权威状态推到播放单的下一首，播控端随后跟着播 */
+const handlePlayNext = async () => {
+  try {
+    await broadcastSync.playNext()
+  } catch (error) {
+    toast.error(error?.data?.message || locale.value.advanceFailed)
+  }
+}
+
+const handleTakeover = async () => {
+  const target = baselineUser.value?.name || locale.value.noPermission
+  const busy = takeoverBusy.value
+  if (busy) {
+    // 服务端已经判定对方还在播，直接把原因说清楚，不必再发一次注定失败的请求
+    toast.error(locale.value.takeoverBusy(target))
+    return
+  }
+  try {
+    await broadcastSync.takeoverAuthority()
+    toast.success(locale.value.takeoverDone)
+  } catch (error) {
+    toast.error(error?.data?.message || locale.value.takeoverFailed)
+  }
+}
+
+const handleRelease = async () => {
+  try {
+    await broadcastSync.releaseAuthority()
+    toast.success(locale.value.releaseDone)
+  } catch (error) {
+    toast.error(error?.data?.message || locale.value.releaseFailed)
+  }
 }
 
 onMounted(() => {
@@ -271,6 +370,35 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
+.status-listeners {
+  flex-shrink: 0;
+}
+
+.broadcast-next {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  margin-top: 0.2rem;
+  font-size: 0.68rem;
+  color: var(--text-secondary);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.next-label {
+  flex-shrink: 0;
+  padding: 0 0.3rem;
+  border-radius: 4px;
+  background: var(--overlay-15);
+  color: var(--text-secondary);
+}
+
+.next-title {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
 .broadcast-title {
   margin-top: 0.15rem;
   font-size: 0.85rem;
@@ -339,6 +467,15 @@ onUnmounted(() => {
   background: var(--color-accent-alpha-20);
   border-color: var(--color-accent-alpha-40);
   color: var(--color-accent);
+}
+
+.broadcast-btn.next {
+  border-color: var(--color-accent-alpha-40);
+  color: var(--color-accent);
+}
+
+.broadcast-btn.takeover {
+  border-color: var(--overlay-30);
 }
 
 .broadcast-btn.settings {

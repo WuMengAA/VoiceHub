@@ -2,12 +2,34 @@ import { defineEventHandler, getQuery } from 'h3'
 import { db, users } from '~/drizzle/db'
 import { eq } from 'drizzle-orm'
 import { JWTEnhanced } from '~~/server/utils/jwt-enhanced'
-import { resolveRequirePasswordChange } from '~~/server/utils/system-settings-helper'
+import {
+  getSystemSettingsCached,
+  resolveRequirePasswordChange
+} from '~~/server/utils/system-settings-helper'
 import { createApiError } from '~~/server/utils/apiError'
-import { getBroadcastSnapshot, type BroadcastSnapshot } from '~~/server/utils/broadcast-state'
+import {
+  getBroadcastSnapshot,
+  syncBroadcastSession,
+  type BroadcastSnapshot
+} from '~~/server/utils/broadcast-state'
+import { removeListener, touchListener } from '~~/server/utils/broadcast-listeners'
 
 // 存储WebSocket连接
 const musicConnections = new Map<string, any>()
+
+// 自动连播开关的短缓存：心跳每 30 秒触发一次自检，没必要每次都去查库
+const AUTO_ADVANCE_CACHE_MS = 10_000
+let autoAdvanceCache: { at: number; value: boolean } | null = null
+
+async function resolveAutoAdvance(): Promise<boolean> {
+  if (autoAdvanceCache && Date.now() - autoAdvanceCache.at < AUTO_ADVANCE_CACHE_MS) {
+    return autoAdvanceCache.value
+  }
+  const settings = await getSystemSettingsCached()
+  const value = settings?.broadcastAutoAdvance === true
+  autoAdvanceCache = { at: Date.now(), value }
+  return value
+}
 
 // 音乐状态接口
 interface MusicState {
@@ -114,6 +136,15 @@ export default defineEventHandler(async (event) => {
   // 生成连接ID
   const connectionId = `music_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
 
+  // 收听者标识：登录用户按 userId 归并，匿名按连接 ID 归并，
+  // 客户端心跳（/api/music/broadcast/listeners）带上它就能复用同一条登记
+  const listenerKey = userId !== null ? `user:${userId}` : `anon:${connectionId}`
+  const listenersEnabled =
+    (await getSystemSettingsCached())?.broadcastListenersEnabled !== false
+  if (listenersEnabled) {
+    touchListener(listenerKey)
+  }
+
   // 设置SSE头
   const response = event.node.res
   response.writeHead(200, {
@@ -132,16 +163,21 @@ export default defineEventHandler(async (event) => {
       data: {
         connectionId,
         userId,
+        listenerKey,
+        listenersEnabled,
         timestamp: Date.now()
       }
     })}\n\n`
   )
 
-  // 新订阅者立即拿到当前广播状态，无需等待下一次上报（学生端首屏与中途进入都能对齐）
+  // 新订阅者立即拿到当前广播状态，无需等待下一次上报（学生端首屏与中途进入都能对齐）。
+  // 顺带做一次连播自检：播控端掉线期间曲目可能早已播完，这里补上自动切歌再下发
+  const autoAdvance = await resolveAutoAdvance()
+  const initialSession = syncBroadcastSession({ autoAdvance })
   response.write(
     `data: ${JSON.stringify({
       type: 'broadcast_state',
-      data: getBroadcastSnapshot()
+      data: initialSession.snapshot ?? getBroadcastSnapshot()
     })}\n\n`
   )
 
@@ -153,6 +189,7 @@ export default defineEventHandler(async (event) => {
     if (musicConnections.has(connectionId)) {
       musicConnections.delete(connectionId)
     }
+    removeListener(listenerKey)
     if (heartbeatInterval) {
       clearInterval(heartbeatInterval)
     }
@@ -177,7 +214,7 @@ export default defineEventHandler(async (event) => {
   })
 
   // 定期发送心跳（改进错误处理）
-  const heartbeatInterval = setInterval(() => {
+  const heartbeatInterval = setInterval(async () => {
     if (!musicConnections.has(connectionId)) {
       clearInterval(heartbeatInterval)
       return
@@ -188,6 +225,15 @@ export default defineEventHandler(async (event) => {
       if (response.destroyed || response.writableEnded) {
         cleanup()
         return
+      }
+
+      // 心跳里做连播自检：广播在推进时即使没人上报，也要在这里把下一首顶上去
+      if (listenersEnabled) {
+        touchListener(listenerKey)
+      }
+      const session = syncBroadcastSession({ autoAdvance: await resolveAutoAdvance() })
+      if (session.changed) {
+        pushToConnections({ type: 'broadcast_state', data: session.snapshot }, 'broadcast state')
       }
 
       response.write(

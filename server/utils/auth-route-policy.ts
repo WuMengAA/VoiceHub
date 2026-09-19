@@ -46,6 +46,8 @@ export const PUBLIC_API_EXACT_ROUTES: readonly RoutePolicy[] = [
   { path: '/api/music/websocket', methods: GET_METHODS },
   // 只放行读取广播状态；写入（POST）必须经登录与播控基准校验
   { path: '/api/music/broadcast', methods: GET_METHODS },
+  // 收听心跳：公开可写（匿名也在听），但一个 key 只算一个人头，另有 IP 级节流
+  { path: '/api/music/broadcast/listeners', methods: ['POST'] },
   { path: '/api/sys/time', methods: GET_METHODS }
 ]
 

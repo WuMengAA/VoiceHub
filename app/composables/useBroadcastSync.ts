@@ -21,6 +21,30 @@ export interface BroadcastState {
   isPlaying: boolean
   publisherName: string | null
   updatedAt: number
+  /** 当前播控人的用户 ID；本机判定「是不是我在播」就靠它 */
+  publisherId: number | null
+  /** 本次广播会话的开始时间戳 */
+  sessionStartedAt: number
+  /** 当前收听人数 */
+  listenerCount: number
+  /** 播放单里的下一首 */
+  nextUp: BroadcastQueueItem | null
+  /** 队列中还剩几首 */
+  queueRemaining: number
+}
+
+/** 播放单里的曲目 */
+export interface BroadcastQueueItem {
+  songId: number
+  title: string
+  artist: string
+  cover: string | null
+  musicPlatform: string | null
+  musicId: string | null
+  duration: number
+  scheduleId: number | null
+  playDate: string | null
+  sequence: number | null
 }
 
 /** 播控端上报的字段 */
@@ -46,6 +70,8 @@ const FOLLOW_ALIGN_INTERVAL_MS = 5000
 const FOLLOW_RETRY_COOLDOWN_MS = 60000
 // SSE 断开后的兜底轮询间隔
 const POLL_INTERVAL_MS = 15000
+// 收听心跳间隔：告诉服务端「这个页面还在听」
+const LISTENER_HEARTBEAT_MS = 30000
 // 广播状态视为失效的空窗：略大于服务端的播放中空窗（90s），
 // 播控端掉线后学生端能自行结束「正在播放」，不必等到下一次拉取
 const BROADCAST_IDLE_TIMEOUT_MS = 95000
@@ -75,11 +101,21 @@ export interface BroadcastAuthorityConfig {
     baselineUser: BroadcastAuthorityUser | null
     baselineUserStale: boolean
     roles: string[]
+    baselineLastActiveAt: number | null
+    idleReleaseSec: number
+    autoAdvance: boolean
+    listenersEnabled: boolean
   }
   /** 当前登录者是否具备播控资格（由服务端判定，客户端不再自行推断） */
   canBroadcast: boolean
   /** 不具备资格时的原因：ROLE / STATUS / DISABLED / NOT_BASELINE */
   denyReason: string | null
+  /** 能否立即接管播控权 */
+  canTakeover: boolean
+  /** 不能接管时的原因：NO_BASELINE / ALREADY_BASELINE / BASELINE_ACTIVE */
+  takeoverDenyReason: string | null
+  /** 当前是否有广播在播 */
+  broadcastActive: boolean
   /** 是否可修改基准配置（管理员及以上） */
   canEdit: boolean
   /** 可被选为基准播控人的候选用户（仅 canEdit 时下发） */
@@ -90,6 +126,10 @@ export interface BroadcastAuthorityConfig {
 const broadcast = ref<BroadcastState | null>(null)
 const connected = ref(false)
 const followEnabled = ref(false)
+// 播放单（连播队列）与「下一首」：队列只在播控端用到，学生端只需 nextUp
+const queue = ref<BroadcastQueueItem[]>([])
+const queueCurrentIndex = ref(-1)
+const queueLoaded = ref(false)
 // 播控端是否对外广播：默认开启，管理员可在「正在广播」条上结束广播
 const publishEnabled = ref(true)
 // 播控基准配置：以服务端判定为准，未拉取到时按「无播控权」处理，避免误暴露播控入口
@@ -103,7 +143,10 @@ let eventSource: EventSource | null = null
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let tickTimer: ReturnType<typeof setInterval> | null = null
 let pollTimer: ReturnType<typeof setInterval> | null = null
+let heartbeatTimer: ReturnType<typeof setInterval> | null = null
 let connectionStarted = false
+// SSE 连接建立时服务端下发的收听者标识，心跳复用它才能与连接合并成同一条登记
+let listenerKey: string | null = null
 let lastAlignAt = 0
 // 跟随播放失败的歌曲与其失败时间，用于退避重试
 let followFailedSongId: number | null = null
@@ -112,6 +155,8 @@ let lastPublishAt = 0
 let publishTimer: ReturnType<typeof setTimeout> | null = null
 let pendingReport: BroadcastReport | null = null
 let lastPublishedAt = 0
+// 上一次看到的远端歌曲：用于识别「服务端替我们把曲目推进了」
+let lastRemoteSongId: number | null = null
 
 const applySnapshot = (snapshot: BroadcastState | null) => {
   if (!snapshot) {
@@ -183,6 +228,41 @@ export const useBroadcastSync = () => {
   /** 不具备播控资格的原因码，便于界面给出人话提示 */
   const denyReason = computed(() => authorityConfig.value?.denyReason ?? null)
 
+  /** 能否接管播控权（服务端判定：对方失联或无人占位） */
+  const canTakeover = computed(() => Boolean(authorityConfig.value?.canTakeover))
+
+  /** 不能接管时的原因码：NO_BASELINE / ALREADY_BASELINE / BASELINE_ACTIVE */
+  const takeoverDenyReason = computed(() => authorityConfig.value?.takeoverDenyReason ?? null)
+
+  /** 是否开自动连播（曲目播完自动切下一首） */
+  const autoAdvance = computed(() => authorityConfig.value?.authority.autoAdvance ?? false)
+
+  /** 是否统计在线收听人数 */
+  const listenersEnabled = computed(
+    () => authorityConfig.value?.authority.listenersEnabled ?? true
+  )
+
+  /** 当前广播是不是本机在播（避免播控端自己跟随自己的广播） */
+  const isSelfBroadcasting = computed(() => {
+    const current = broadcast.value
+    const userId = auth.user.value?.id
+    if (!current || !userId) return false
+    return current.publisherId !== null && String(current.publisherId) === String(userId)
+  })
+
+  /** 当前收听人数（关闭统计时为 0） */
+  const listenerCount = computed(() =>
+    listenersEnabled.value ? Number(broadcast.value?.listenerCount) || 0 : 0
+  )
+
+  /** 播放单里当前曲目之后的待播条目 */
+  const upcomingQueue = computed(() => queue.value.slice(queueCurrentIndex.value + 1))
+
+  /** 播放单里已经播过的条目 */
+  const playedQueue = computed(() =>
+    queueCurrentIndex.value >= 0 ? queue.value.slice(0, queueCurrentIndex.value) : []
+  )
+
   /** 当前广播是否命中某条排期（用于排期列表的「正在播放」标识） */
   const isPlayingSchedule = (scheduleId: number | string, songId?: number | string) => {
     const current = broadcast.value
@@ -243,7 +323,13 @@ export const useBroadcastSync = () => {
    * 保存播控基准配置（仅管理员及以上可用）。
    * 关闭总开关时服务端会立刻停播，这里同步收起本机的播控开关。
    */
-  const saveAuthority = async (payload: { enabled?: boolean; baselineUserId?: number | null }) => {
+  const saveAuthority = async (payload: {
+    enabled?: boolean
+    baselineUserId?: number | null
+    autoAdvance?: boolean
+    idleReleaseSec?: number
+    listenersEnabled?: boolean
+  }) => {
     if (import.meta.server) return null
     const data = await $fetch<BroadcastAuthorityConfig>('/api/music/broadcast/authority', {
       method: 'POST',
@@ -256,9 +342,108 @@ export const useBroadcastSync = () => {
     return data
   }
 
+  /**
+   * 接管播控权：把自己设为基准播控人。
+   * 服务端会在接管时结束当前广播，这里顺带刷新一次播放单，便于接管后立刻排新单。
+   */
+  const takeoverAuthority = async () => {
+    if (import.meta.server) return null
+    const data = await $fetch<BroadcastAuthorityConfig>('/api/music/broadcast/authority', {
+      method: 'POST',
+      body: { action: 'claim' }
+    })
+    authorityConfig.value = data
+    await refreshQueue()
+    return data
+  }
+
+  /** 交还播控权：改回「歌曲管理员及以上都能播」 */
+  const releaseAuthority = async () => {
+    if (import.meta.server) return null
+    const data = await $fetch<BroadcastAuthorityConfig>('/api/music/broadcast/authority', {
+      method: 'POST',
+      body: { action: 'release' }
+    })
+    authorityConfig.value = data
+    return data
+  }
+
+  // —— 播放单 ——
+
+  /** 读取播放单（需要歌曲管理员及以上） */
+  const refreshQueue = async () => {
+    if (import.meta.server || !isBroadcastStaff()) {
+      queue.value = []
+      queueCurrentIndex.value = -1
+      queueLoaded.value = false
+      return null
+    }
+    try {
+      const data = await $fetch<{
+        queue: BroadcastQueueItem[]
+        currentIndex: number
+      }>('/api/music/broadcast/queue')
+      queue.value = data?.queue ?? []
+      queueCurrentIndex.value = Number(data?.currentIndex ?? -1) || -1
+      queueLoaded.value = true
+      return data
+    } catch (error) {
+      // 非基准播控人拿不到播放单是正常的（403），不必刷日志
+      queueLoaded.value = false
+      return null
+    }
+  }
+
+  /**
+   * 保存播放单。
+   * @param songIds 按顺序提交的曲目 ID 列表；空数组表示清空
+   */
+  const saveQueue = async (songIds: number[]) => {
+    if (import.meta.server) return null
+    const data = await $fetch<{ queue: BroadcastQueueItem[]; currentIndex: number }>(
+      '/api/music/broadcast/queue',
+      {
+        method: 'POST',
+        body: { songIds }
+      }
+    )
+    queue.value = data?.queue ?? []
+    queueCurrentIndex.value = Number(data?.currentIndex ?? -1) || -1
+    queueLoaded.value = true
+    return data
+  }
+
+  /** 手动切到播放单的下一首 */
+  const playNext = async () => {
+    if (import.meta.server) return null
+    await $fetch('/api/music/broadcast', {
+      method: 'POST',
+      body: { action: 'next' }
+    })
+    return true
+  }
+
+  /** 收听心跳：告诉服务端这个页面还在听 */
+  const sendListenerHeartbeat = async () => {
+    if (import.meta.server || !listenerKey) return
+    try {
+      await $fetch('/api/music/broadcast/listeners', {
+        method: 'POST',
+        body: { connectionId: listenerKey.replace(/^anon:/, '') }
+      })
+    } catch {
+      // 心跳失败无所谓，下一次周期会重试；SSE 连接本身也在计数
+    }
+  }
+
   const handleMessage = (payload: any) => {
     if (payload?.type === 'broadcast_state') {
       applySnapshot(payload.data ?? null)
+      return
+    }
+    if (payload?.type === 'connection_established') {
+      // 服务端给的统一标识：后续心跳带上它，才能让「连接」与「心跳」合并成一个人头
+      listenerKey = payload.data?.listenerKey ?? null
     }
   }
 
@@ -337,6 +522,7 @@ export const useBroadcastSync = () => {
     tickTimer = setInterval(() => {
       tickNow.value = getSyncedTimestamp()
       void alignFollowPlayback()
+      void followServerAdvance()
     }, 1000)
 
     if (pollTimer) clearInterval(pollTimer)
@@ -345,6 +531,13 @@ export const useBroadcastSync = () => {
         void refresh()
       }
     }, POLL_INTERVAL_MS)
+
+    // 收听心跳：SSE 断开时这一份登记会随之过期，不会长期把人数算多
+    if (heartbeatTimer) clearInterval(heartbeatTimer)
+    heartbeatTimer = setInterval(() => {
+      void sendListenerHeartbeat()
+    }, LISTENER_HEARTBEAT_MS)
+    void sendListenerHeartbeat()
   }
 
   const disconnect = () => {
@@ -366,6 +559,11 @@ export const useBroadcastSync = () => {
       clearInterval(pollTimer)
       pollTimer = null
     }
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer)
+      heartbeatTimer = null
+    }
+    listenerKey = null
     broadcast.value = null
   }
 
@@ -417,6 +615,40 @@ export const useBroadcastSync = () => {
     if (drift > FOLLOW_DRIFT_TOLERANCE && getSyncedTimestamp() - lastAlignAt > FOLLOW_ALIGN_INTERVAL_MS) {
       lastAlignAt = getSyncedTimestamp()
       await control.seek(target)
+    }
+  }
+
+  /**
+   * 播控端跟随服务端的连播推进。
+   *
+   * 服务端没有「替客户端按下播放键」的能力：它只能把权威状态切到下一首。
+   * 所以这里盯着广播的 songId——一旦它变了，且本机确实正在播控（近期有上报），
+   * 就加载并播放这首新歌，让自动连播真正发出声音。
+   */
+  const followServerAdvance = async () => {
+    const current = broadcast.value
+    if (!current || !canPublish.value || !publishEnabled.value) return
+    // 近期没有上报过说明这台机器当下不在播控，别自作主张替别人放歌
+    if (getSyncedTimestamp() - lastPublishedAt > 60_000) return
+    if (lastRemoteSongId === current.songId) return
+
+    const seen = lastRemoteSongId
+    lastRemoteSongId = current.songId
+    // 首帧只记录、不播；暂停中的广播也不自动开声
+    if (seen === null || !current.isPlaying) return
+
+    const localSong = globalAudioPlayer.getCurrentSong().value
+    if (localSong && String(localSong.id) === String(current.songId)) return
+
+    const song = resolveBroadcastSong(current.songId)
+    if (!song) return
+    if (followFailedSongId === current.songId && getSyncedTimestamp() - followFailedAt < FOLLOW_RETRY_COOLDOWN_MS) {
+      return
+    }
+    const started = globalAudioPlayer.playSong(song)
+    if (!started) {
+      followFailedSongId = current.songId
+      followFailedAt = getSyncedTimestamp()
     }
   }
 
@@ -566,8 +798,30 @@ export const useBroadcastSync = () => {
     authorityEnabled,
     /** 不具备播控资格的原因码 */
     denyReason,
+    /** 能否接管播控权（对方失联或无人占位） */
+    canTakeover,
+    /** 不能接管的原因码：NO_BASELINE / ALREADY_BASELINE / BASELINE_ACTIVE */
+    takeoverDenyReason,
+    /** 是否开启自动连播 */
+    autoAdvance,
+    /** 是否统计在线收听人数 */
+    listenersEnabled,
+    /** 当前收听人数 */
+    listenerCount,
+    /** 当前广播是否为本机在播 */
+    isSelfBroadcasting,
     /** 基准配置原始对象（含候选用户列表） */
     authorityConfig: readonly(authorityConfig),
+    /** 播放单（连播队列） */
+    queue: readonly(queue),
+    /** 当前曲目在播放单中的下标 */
+    queueCurrentIndex: readonly(queueCurrentIndex),
+    /** 播放单是否已从服务端取回 */
+    queueLoaded: readonly(queueLoaded),
+    /** 待播曲目 */
+    upcomingQueue,
+    /** 已播曲目 */
+    playedQueue,
     isPlayingSchedule,
     isPlayingSong,
     connect,
@@ -575,6 +829,11 @@ export const useBroadcastSync = () => {
     refresh,
     refreshAuthority,
     saveAuthority,
+    takeoverAuthority,
+    releaseAuthority,
+    refreshQueue,
+    saveQueue,
+    playNext,
     setFollowEnabled,
     setPublishEnabled,
     publish,

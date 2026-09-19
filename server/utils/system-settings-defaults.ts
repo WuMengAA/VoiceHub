@@ -93,6 +93,10 @@ export const SYSTEM_SETTINGS_DEFAULTS = {
   // 播控（学生端同步音乐管理员播放状态）
   broadcastEnabled: true,
   broadcastBaselineUserId: null,
+  broadcastAutoAdvance: false,
+  // 基准播控人 3 分钟无心跳即自动释放基准锁（0 表示不自动释放）
+  broadcastIdleReleaseSec: 180,
+  broadcastListenersEnabled: true,
 }
 
 export const PUBLIC_SETTINGS_FIELDS = [

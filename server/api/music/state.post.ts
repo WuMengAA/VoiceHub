@@ -1,6 +1,9 @@
 import { defineEventHandler, readBody } from 'h3'
 import { broadcastMusicState, broadcastSongChange } from './websocket'
-import { requireBroadcastAuthority } from '~~/server/utils/broadcast-authority'
+import {
+  markBroadcastActivity,
+  requireBroadcastAuthority
+} from '~~/server/utils/broadcast-authority'
 
 /**
  * 旧版音乐状态通道（HarmonyOS 播放端在用），保留原有 SSE 消息类型以免打断既有客户端。
@@ -11,7 +14,11 @@ import { requireBroadcastAuthority } from '~~/server/utils/broadcast-authority'
  * 新的播控端应改用 POST /api/music/broadcast（支持排期绑定、进度外推与统一快照）。
  */
 export default defineEventHandler(async (event) => {
-  await requireBroadcastAuthority(event)
+  const authority = await requireBroadcastAuthority(event)
+  const user = event.context.user
+
+  // 旧通道同样算作播控心跳：否则只有旧客户端在播时，会被误判成「基准人跑路」而自动释放基准锁
+  markBroadcastActivity(user?.id)
 
   try {
     const body = await readBody(event)
