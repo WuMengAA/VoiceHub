@@ -3,7 +3,7 @@ import { useAudioQuality } from '~/composables/useAudioQuality'
 import { useLyrics } from '~/composables/useLyrics'
 import { useAudioPlayer } from '~/composables/useAudioPlayer'
 import { useLocale } from '~/utils/locale'
-import type { MusicTrackMeta } from '~/utils/musicUrl'
+import { getCachedMusicUrlSource, getMusicUrlResult, type MusicTrackMeta } from '~/utils/musicUrl'
 
 // 单例状态
 const audioPlayer = ref<HTMLAudioElement | null>(null)
@@ -33,6 +33,14 @@ const hasUserInteracted = ref(false)
 
 // 播放模式: 'off' (单曲播放完退出) | 'order' (顺序播放列表) | 'loopOne' (单曲循环)
 const playMode = ref<'off' | 'order' | 'loopOne'>('order')
+
+// 音源自动故障转移（音频源失效 → 切换备用音源 → 再次播放）
+// 音源解析器已内置多源降级，但「解析成功、播放时/加载时链接却失效」的运行时故障
+// 没法在解析层发现，必须靠这里在加载/播放失败时换一个源重试。
+const MAX_SOURCE_FAILOVER = 3
+const sourceFailoverSongId = ref<string | null>(null)
+const sourceFailoverAttempts = ref(0)
+const isFailingOver = ref(false)
 
 // 共享歌词实例
 const lyrics = useLyrics()
@@ -208,9 +216,18 @@ export const useAudioPlayerControl = () => {
   // 加载新歌曲
   const loadSong = async (
     songUrlOrSong: string | any,
-    retryCount: number = 0
+    retryCount: number = 0,
+    options: { resumeFrom?: number; isFailover?: boolean } = {}
   ): Promise<boolean> => {
     if (!audioPlayer.value) return false
+
+    // 新歌（带 id 的对象）进来时重置故障转移计数；故障转移回调传入的是字符串 URL，不重置
+    if (typeof songUrlOrSong === 'object' && songUrlOrSong?.id != null) {
+      if (String(songUrlOrSong.id) !== sourceFailoverSongId.value) {
+        sourceFailoverSongId.value = String(songUrlOrSong.id)
+        sourceFailoverAttempts.value = 0
+      }
+    }
 
     stop()
     isLoadingNewSong.value = true
@@ -317,6 +334,15 @@ export const useAudioPlayerControl = () => {
         console.log('自动播放成功')
       }
 
+      // 加载期指定了续播位置（音源故障转移时沿用原进度），加载完成后跳回
+      if (options.resumeFrom && options.resumeFrom > 0 && audioPlayer.value) {
+        try {
+          audioPlayer.value.currentTime = options.resumeFrom
+        } catch {
+          // 续播定位失败不影响正常播放
+        }
+      }
+
       return true
     } catch (error: any) {
       if (error?.message === 'AbortError') {
@@ -324,16 +350,17 @@ export const useAudioPlayerControl = () => {
         return false
       }
 
-      // 重试逻辑（针对网络抖动等临时错误）
+      // 音源故障转移：解析成功但加载/播放时链接失效，换一个源重试
+      // 仅初次加载（非故障转移回调自身）且歌曲可重新解析时触发，避免无限递归
       if (
-        retryCount < 2 &&
-        !hasError.value &&
+        !isFailingOver.value &&
+        !options.isFailover &&
+        retryCount < MAX_SOURCE_FAILOVER &&
         typeof songUrlOrSong === 'object' &&
         songUrlOrSong?.musicPlatform
       ) {
-        await new Promise((resolve) => setTimeout(resolve, 1000))
-        if (hasError.value) return false
-        return await loadSong(songUrlOrSong, retryCount + 1)
+        const switched = await attemptSourceFailover(0)
+        if (switched) return true
       }
 
       hasError.value = true
@@ -779,6 +806,107 @@ export const useAudioPlayerControl = () => {
     isLoadingTrack.value = false
   }
 
+  // 重置音源故障转移状态（换歌时调用，避免上一首的失败计数污染下一首）
+  const resetSourceFailover = (songId?: string | number | null) => {
+    sourceFailoverSongId.value = songId != null ? String(songId) : null
+    sourceFailoverAttempts.value = 0
+  }
+
+  /**
+   * 为指定歌曲重新解析一个「不同于当前失效链接」的可用音源。
+   * 通过 excludeSources 排除已知失效的源，让解析器在剩余源里挑一个可用的。
+   * 返回 { url, source }，若没有可用替代源则返回 null。
+   */
+  const resolveAlternativeSource = async (
+    song: any,
+    currentUrl?: string | null
+  ): Promise<{ url: string; source?: string } | null> => {
+    if (!song?.musicPlatform || !song?.musicId) return null
+    const { getQuality } = useAudioQuality()
+
+    const excludeSources: string[] = []
+    const failedSource = currentUrl ? getCachedMusicUrlSource(currentUrl) : null
+    if (failedSource && failedSource !== 'play-url') {
+      excludeSources.push(failedSource)
+    }
+    // 该歌曲此前已失败的音源一并排除，避免反复撞同一根失效链接
+    if (
+      song.sourceInfo?.playSource &&
+      song.sourceInfo.playSource !== 'play-url' &&
+      !excludeSources.includes(song.sourceInfo.playSource)
+    ) {
+      excludeSources.push(song.sourceInfo.playSource)
+    }
+
+    try {
+      const result = await getMusicUrlResult(song.musicPlatform, song.musicId, song.playUrl, {
+        excludeSources,
+        quality: getQuality(song.musicPlatform),
+        ignoreProvidedUrl: true,
+        musicInfo: {
+          name: song.title,
+          artist: song.artist,
+          album: song.album || undefined
+        }
+      })
+      if (!result?.url) return null
+      // 解析出的还是同一个（已失效的）链接，说明没有可用替代源
+      if (currentUrl && result.url === currentUrl) return null
+      return result
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * 音源故障转移：当前音源失效时自动换源并重播（可在加载期或播放期调用）。
+   * 成功返回 true；达到尝试上限或无可用替代源时返回 false。
+   * 全程以 isFailingOver 加锁，防止与组件层 trySwitchPlaybackSource 重复触发造成竞态。
+   */
+  const attemptSourceFailover = async (resumeFrom?: number): Promise<boolean> => {
+    if (isFailingOver.value) return false
+    const song = globalAudioPlayer.getCurrentSong().value
+    if (!song || !song.musicPlatform || !song.musicId) return false
+
+    if (sourceFailoverSongId.value !== String(song.id)) {
+      sourceFailoverSongId.value = String(song.id)
+      sourceFailoverAttempts.value = 0
+    }
+    if (sourceFailoverAttempts.value >= MAX_SOURCE_FAILOVER) {
+      console.warn('[AudioPlayerControl] 音源故障转移已达上限，放弃自动换源')
+      return false
+    }
+
+    const currentUrl =
+      song.musicUrl || audioPlayer.value?.currentSrc || audioPlayer.value?.src || null
+    const alt = await resolveAlternativeSource(song, currentUrl)
+    if (!alt) return false
+
+    sourceFailoverAttempts.value++
+    isFailingOver.value = true
+    try {
+      const updatedSong = {
+        ...song,
+        musicUrl: alt.url,
+        sourceInfo: { ...(song.sourceInfo || {}), playSource: alt.source }
+      }
+      // 更新全局当前歌曲，使后续操作（广播上报、进度同步）沿用新链接
+      globalAudioPlayer.updateCurrentSong(updatedSong)
+      if (window.$showNotification) {
+        window.$showNotification(audioPlayerLocale.value.fallbackSource, 'warning')
+      }
+      const resumed = resumeFrom != null ? resumeFrom : audioPlayer.value?.currentTime || 0
+      // 以故障转移回调方式重新加载，内部不会再次递归触发本逻辑
+      await loadSong(alt.url, 0, { resumeFrom: resumed, isFailover: true })
+      return true
+    } catch (e) {
+      console.warn('[AudioPlayerControl] 音源故障转移失败:', e)
+      return false
+    } finally {
+      isFailingOver.value = false
+    }
+  }
+
   // 强制更新位置（用于鸿蒙侧同步）
   const forceUpdatePosition = (timeInSeconds: number) => {
     // 如果正在拖拽，不要更新位置
@@ -883,6 +1011,8 @@ export const useAudioPlayerControl = () => {
     progressBarRef,
     hasUserInteracted,
     playMode, // 暴露播放模式
+    isFailingOver, // 音源故障转移进行中（组件层据此避让，防止竞态）
+    attemptSourceFailover, // 主动触发音源故障转移（组件层未知源盲区的最终兜底）
 
     // 基本控制
     play,

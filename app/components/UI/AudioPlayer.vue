@@ -358,6 +358,7 @@ const fallbackOpenDialogMessage = ref('播放地址不可直接播放，是否�
 const isFallbackHandling = ref(false) // 标记正在处理 fallback，阻止重试逻辑
 const consecutiveSkipCount = ref(0) // 连续跳过失败的歌曲数
 const MAX_CONSECUTIVE_SKIP = 3 // 最大连续跳过次数
+const MAX_SOURCE_SWITCH = 3 // 单首歌曲音源切换上限，避免无限循环
 const MIN_VALID_QQ_AUDIO_DURATION = 10
 const NETEASE_SCROBBLE_MIN_SECONDS = 30
 const NETEASE_SCROBBLE_SHORT_AUDIO_RATIO = 0.8
@@ -555,6 +556,12 @@ const trySwitchPlaybackSource = async () => {
     return false
   }
 
+  // 控件层正在做音源故障转移（加载期），这里避让，避免两套逻辑同时 reload 造成竞态
+  if (control.isFailingOver.value) return false
+
+  // 单首歌曲切换次数达到上限后不再自动切换，交由用户处理
+  if (failedPlaybackSources.value.length >= MAX_SOURCE_SWITCH) return false
+
   const failedSource = getCurrentFailedSource()
   const excludeSources = [...failedPlaybackSources.value]
 
@@ -568,6 +575,43 @@ const trySwitchPlaybackSource = async () => {
   }
 
   if (!excludeSources.length) {
+    // 未知失效源（缓存未记录且非 QQ 音乐）：做一次全新解析，若得到不同链接则用之。
+    // 仍是同一链接说明无可用替代源，返回 false 交给控件层最终兜底。
+    isFallbackHandling.value = true
+    control.isLoadingTrack.value = true
+    try {
+      const probe = await getMusicUrlResult(
+        song.musicPlatform,
+        song.musicId,
+        song.playUrl,
+        buildFallbackResolveOptions(song, [])
+      )
+      const currentSrc = audioPlayer.value?.currentSrc || audioPlayer.value?.src || ''
+      if (probe?.url && probe.url !== currentSrc) {
+        failedPlaybackSources.value = [...excludeSources, 'unknown']
+        const updatedSong = {
+          ...song,
+          musicUrl: probe.url,
+          sourceInfo: { ...(song.sourceInfo || {}), playSource: probe.source }
+        }
+        sync.globalAudioPlayer.playSong(updatedSong)
+        emit('songChange', updatedSong)
+        if (window.$showNotification) {
+          window.$showNotification(audioPlayerLocale.value.fallbackSource, 'warning')
+        }
+        await nextTick()
+        if (audioPlayer.value) {
+          audioPlayer.value.load()
+          await control.play()
+        }
+        return true
+      }
+    } catch {
+      // 忽略，交给控件层最终兜底
+    } finally {
+      isFallbackHandling.value = false
+      control.isLoadingTrack.value = false
+    }
     return false
   }
 
@@ -1013,6 +1057,9 @@ const handleError = async (error) => {
 
   // 如果正在处理 fallback，直接返回，不走重试逻辑
   if (isFallbackHandling.value) return
+
+  // 控件层正在做音源故障转移（加载期换源），这里避让，避免两套逻辑同时 reload
+  if (control.isFailingOver.value) return
 
   const switchedSource = await trySwitchPlaybackSource()
   if (switchedSource) {
