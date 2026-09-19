@@ -250,9 +250,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import AppleMusicLyrics from './AppleMusicLyrics.vue'
-import LyricsModal from './LyricsModal.vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+// 歌词引擎（~326KB）与全屏歌词模态按需加载，避免首屏拉大包拖慢移动端
+const AppleMusicLyrics = defineAsyncComponent(() => import('./AppleMusicLyrics.vue'))
+const LyricsModal = defineAsyncComponent(() => import('./LyricsModal.vue'))
 import AudioElement from './AudioPlayer/AudioElement.vue'
 import VolumeControl from './AudioPlayer/VolumeControl.vue'
 import BilibiliIframeModal from './BilibiliIframeModal.vue'

@@ -7,6 +7,7 @@
           v-if="broadcast.cover"
           :alt="broadcast.title"
           :src="convertToHttps(broadcast.cover)"
+          loading="lazy"
           referrerpolicy="no-referrer"
         >
         <Icon v-else :size="20" name="music" />
@@ -131,10 +132,11 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref } from 'vue'
 import Icon from '~/components/UI/Icon.vue'
 import BroadcastSettingsModal from '~/components/Songs/BroadcastSettingsModal.vue'
-import BroadcastQueueModal from '~/components/Songs/BroadcastQueueModal.vue'
+// 播放单管理弹窗按需才开，懒加载减小首屏 JS
+const BroadcastQueueModal = defineAsyncComponent(() => import('~/components/Songs/BroadcastQueueModal.vue'))
 import { useToast } from '~/composables/useToast'
 import { convertToHttps } from '~/utils/url'
 import { useLocale } from '~/utils/locale'
