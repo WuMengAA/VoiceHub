@@ -904,7 +904,9 @@ export default defineNuxtConfig({
   },
 
   pwa: {
-    registerType: 'autoUpdate',
+    // prompt 模式：检测到新版本不再自动整页 reload（autoUpdate 会导致发版后所有用户首访白屏刷新两次），
+    // 改为由 PwaUpdatePrompt.vue 弹底部提示，用户主动点「立即更新」才 reload。
+    registerType: 'prompt',
     manifest: {
       name: siteTitle,
       short_name: siteShortName,
@@ -938,6 +940,7 @@ export default defineNuxtConfig({
       enabled: true,
       type: 'module'
     },
-    injectRegister: 'auto'
+    // 关闭自动注入注册脚本，改由 app/plugins/pwa-update.client.ts 手动 registerSW 并驱动更新 UI
+    injectRegister: null
   }
 })

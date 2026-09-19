@@ -11,6 +11,9 @@
     <!-- 版本更新提示（顶部醒目 banner，自动对比版本号） -->
     <VersionUpdateBanner />
 
+    <!-- PWA 更新提示（底部，检测到新版本时弹「立即更新」，替代 autoUpdate 的无预警整页刷新） -->
+    <PwaUpdatePrompt />
+
     <!-- 微信/QQ 内置浏览器账号密码登录后的绑定引导 -->
     <OAuthBindReminderModal />
 
