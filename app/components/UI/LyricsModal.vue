@@ -10,7 +10,7 @@
       >
         <div
           ref="fullscreenContainer"
-          :class="{ leaving: isExiting }"
+          :class="{ leaving: isExiting, 'sonic-mode': visualizerTheme === 'sonic' }"
           class="lyrics-fullscreen-container"
         >
           <!-- 动态背景 -->
@@ -26,6 +26,16 @@
               :class="{ visible: showBackgroundFallback }"
               :style="{ backgroundImage: `url(${currentCoverUrl})` }"
               class="cover-background"
+            />
+            <!-- 体素可视化主题（音域回响 Sonic Topography）背景层 -->
+            <iframe
+              v-if="sonicEverEnabled"
+              v-show="visualizerTheme === 'sonic'"
+              ref="sonicIframe"
+              class="sonic-visualizer-iframe"
+              src="/visualizer/sonic-topography/index.html"
+              title="Sonic Topography"
+              @load="handleSonicIframeLoad"
             />
             <!-- 叠加暗化层，提升白色背景下歌词对比度 -->
             <div class="background-overlay" />
@@ -357,7 +367,7 @@
   </Teleport>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, nextTick, onUnmounted, ref, watch, onMounted } from 'vue'
 import { useAudioPlayer } from '~/composables/useAudioPlayer'
 import { useAudioPlayerControl } from '~/composables/useAudioPlayerControl'
@@ -402,6 +412,9 @@ const visualizerTheme = ref<'gradient' | 'sonic'>(
 )
 const sonicIframe = ref<HTMLIFrameElement | null>(null)
 const sonicRafId = ref<number | null>(null)
+// 一旦启用过体素主题就保留 iframe（用 v-show 隐藏而非销毁），避免来回切换时重载三维场景
+const sonicEverEnabled = ref(visualizerTheme.value === 'sonic')
+const sonicReady = ref(false)
 
 // 响应式状态
 const showQualitySettings = ref(false)
@@ -1217,6 +1230,106 @@ const drawSpectrum = () => {
   }
 }
 
+// ===== 体素可视化主题（音域回响 Sonic Topography）桥接 =====
+// Wallpaper Engine 的音频回调期望 128 个 0~1 的频道值；
+// 宿主把播放器 AnalyserNode 的 FFT 归一化后，经 postMessage 喂给 iframe 内注入的 mock 接口
+const SONIC_FFT_BINS = 128
+
+const postSonicMedia = () => {
+  const win = sonicIframe.value?.contentWindow
+  if (!win) return
+  const song = currentSong.value
+  win.postMessage(
+    {
+      type: 'vh-media',
+      title: song?.title || '',
+      artist: song?.artist || '',
+      cover: currentCoverUrl.value || '',
+      isPlaying: isPlaying.value
+    },
+    '*'
+  )
+}
+
+const pushSonicFrame = () => {
+  const win = sonicIframe.value?.contentWindow
+  if (!win) return
+
+  const bins = new Array(SONIC_FFT_BINS)
+  let raw: Uint8Array | null = null
+  if (audioVisualizer.isInitialized.value) {
+    try {
+      raw = audioVisualizer.getFrequencyData()
+    } catch (e) {
+      raw = null
+    }
+  }
+
+  if (raw && raw.length > 0) {
+    const ratio = raw.length / SONIC_FFT_BINS
+    for (let i = 0; i < SONIC_FFT_BINS; i++) {
+      const idx = Math.min(raw.length - 1, Math.floor(i * ratio))
+      bins[i] = (raw[idx] || 0) / 255
+    }
+  } else {
+    // 无可用 FFT（如不支持 CORS 的音源）：退化为静息呼吸，避免画面彻底死掉
+    const t = (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000
+    for (let i = 0; i < SONIC_FFT_BINS; i++) {
+      bins[i] = 0.05 + 0.04 * Math.sin(t * 1.1 + i * 0.22)
+    }
+  }
+
+  win.postMessage({ type: 'vh-audio', data: bins }, '*')
+}
+
+const stopSonicBridge = () => {
+  if (sonicRafId.value !== null) {
+    cancelAnimationFrame(sonicRafId.value)
+    sonicRafId.value = null
+  }
+}
+
+const startSonicBridge = () => {
+  stopSonicBridge()
+  if (typeof window === 'undefined' || !sonicReady.value) return
+  let lastMediaAt = 0
+  const tick = (now: number) => {
+    sonicRafId.value = requestAnimationFrame(tick)
+    pushSonicFrame()
+    if (now - lastMediaAt > 500) {
+      lastMediaAt = now
+      postSonicMedia()
+    }
+  }
+  sonicRafId.value = requestAnimationFrame(tick)
+}
+
+const handleSonicIframeLoad = () => {
+  sonicReady.value = true
+  postSonicMedia()
+  if (props.isVisible && visualizerTheme.value === 'sonic') {
+    startSonicBridge()
+  }
+}
+
+const toggleVisualizerTheme = () => {
+  visualizerTheme.value = visualizerTheme.value === 'sonic' ? 'gradient' : 'sonic'
+}
+
+watch(visualizerTheme, (theme) => {
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('vh-visualizer-theme', theme)
+  }
+  if (theme === 'sonic') {
+    sonicEverEnabled.value = true
+    nextTick(() => {
+      if (props.isVisible && sonicReady.value) startSonicBridge()
+    })
+  } else {
+    stopSonicBridge()
+  }
+})
+
 watch(
   () => props.isVisible,
   async (visible) => {
@@ -1241,7 +1354,13 @@ watch(
       }
 
       startAnimationLoop()
+
+      // 体素主题：模态可见时启动 FFT 桥接
+      if (visualizerTheme.value === 'sonic') {
+        startSonicBridge()
+      }
     } else {
+      stopSonicBridge()
       if (hasPushedHistory.value) {
         history.back()
         hasPushedHistory.value = false
@@ -1385,6 +1504,12 @@ onUnmounted(() => {
   border: 0;
   z-index: 1;
   pointer-events: none;
+  background: #05070d;
+}
+
+/* 体素主题下减弱暗化层，避免三维画面被压得过暗看不清 */
+.lyrics-fullscreen-container.sonic-mode .background-overlay {
+  opacity: 0.3;
 }
 
 /* 关闭按钮 */
