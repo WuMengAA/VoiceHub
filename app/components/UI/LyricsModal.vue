@@ -316,6 +316,19 @@
               </div>
 
               <div class="right-control">
+                <button
+                  class="control-btn viz-theme-btn"
+                  :class="{ active: visualizerTheme === 'sonic' }"
+                  :title="visualizerTheme === 'sonic' ? '切换为渐变背景' : '切换为体素可视化'"
+                  @click="toggleVisualizerTheme"
+                >
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="4" y1="10" x2="4" y2="14" />
+                    <line x1="9" y1="6" x2="9" y2="18" />
+                    <line x1="14" y1="3" x2="14" y2="21" />
+                    <line x1="19" y1="8" x2="19" y2="16" />
+                  </svg>
+                </button>
                 <VolumeControl />
               </div>
             </div>
@@ -382,6 +395,13 @@ const locale = computed(() => ui.value?.lyricsModal || {})
 // 背景渲染器
 const backgroundRenderer = useBackgroundRenderer()
 const audioVisualizer = useAudioVisualizer()
+
+// 体素可视化主题（音域回响 Sonic Topography）：全屏播放的第二个主题
+const visualizerTheme = ref<'gradient' | 'sonic'>(
+  (typeof localStorage !== 'undefined' && localStorage.getItem('vh-visualizer-theme') === 'sonic') ? 'sonic' : 'gradient'
+)
+const sonicIframe = ref<HTMLIFrameElement | null>(null)
+const sonicRafId = ref<number | null>(null)
 
 // 响应式状态
 const showQualitySettings = ref(false)
@@ -1232,6 +1252,7 @@ watch(
 )
 
 onUnmounted(() => {
+  stopSonicBridge()
   stopProgressTimer()
   document.removeEventListener('keydown', handleKeydown)
   document.removeEventListener('mousemove', handleProgressMouseMove)
@@ -1352,7 +1373,18 @@ onUnmounted(() => {
   position: absolute;
   inset: 0;
   background: radial-gradient(circle at center, var(--mask-10) 0%, var(--mask-50) 100%);
+  z-index: 3;
+}
+
+/* 体素可视化主题（音域回响 Sonic Topography）：全屏播放第二个主题的背景层 */
+.sonic-visualizer-iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
   z-index: 1;
+  pointer-events: none;
 }
 
 /* 关闭按钮 */
