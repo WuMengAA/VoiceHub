@@ -22,6 +22,12 @@
           :name="getAggregateOAuthLoginTypeIcon(provider.loginType)"
           :size="26"
         />
+        <img
+          v-else-if="getExternalOAuthIconUrl(provider)"
+          :src="getExternalOAuthIconUrl(provider)"
+          :alt="provider.name"
+          class="w-6 h-6"
+        />
         <Shield v-else :size="18" />
       </button>
     </div>
@@ -32,7 +38,7 @@
 import { Shield } from '@lucide/vue'
 import { useLocale } from '~/utils/locale'
 import Icon from '~/components/UI/Icon.vue'
-import { getAggregateOAuthLoginTypeIcon } from '~/utils/oauth'
+import { getAggregateOAuthLoginTypeIcon, getExternalOAuthIconUrl } from '~/utils/oauth'
 
 const { oauthProviders, refreshSiteConfig } = useSiteConfig()
 const route = useRoute()
