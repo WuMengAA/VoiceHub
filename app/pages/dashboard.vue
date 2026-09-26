@@ -106,6 +106,14 @@
               <LazyAdminSongManagement />
             </div>
 
+            <!-- 播控台：选歌、排播放单、播控 -->
+            <div
+              v-if="activeTab === 'broadcast' && permissions.canAccessPage('broadcast')"
+              class="animate-in fade-in slide-in-from-bottom-4 duration-500"
+            >
+              <LazyAdminBroadcastConsole />
+            </div>
+
             <!-- 排期管理 -->
             <div
               v-if="activeTab === 'schedule' && permissions.canAccessPage('schedule')"

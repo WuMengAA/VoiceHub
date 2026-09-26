@@ -1013,6 +1013,22 @@ const handleRefresh = () => {
 const confirmAction = async () => {
   const { action, data } = confirmDialog.value
 
+  // 已播歌曲重播确认：本地直接开始播放，不向父组件冒泡（避免触发撤回/重播申请等语义）
+  if (action === 'replayConfirmation') {
+    confirmDialog.value.show = false
+    if (data && ((data.musicPlatform && data.musicId) || data.playUrl)) {
+      try {
+        await playSongWithUrlFetching(data)
+      } catch (error) {
+        console.error('重播失败:', error)
+        if (window.$showNotification) {
+          window.$showNotification(locale.value.musicUrlFailed, 'error')
+        }
+      }
+    }
+    return
+  }
+
   actionInProgress.value = true
   try {
     emit(action, data)
@@ -1062,23 +1078,28 @@ const getFirstChar = (title) => {
 
 // 播放歌曲的辅助函数，处理 URL 获取和播放列表构建
 const playSongWithUrlFetching = async (song) => {
+  const bilibili = isBilibiliSong(song)
   let url = null
   try {
     url = await getMusicUrl(song)
   } catch (error) {
-    if (!isBilibiliSong(song)) {
+    if (!bilibili) {
+      console.warn('[SongList] 音源解析失败:', error)
       if (window.$showNotification) {
         window.$showNotification(locale.value.musicUrlFailed, 'error')
       }
     }
   }
 
+  // 拿不到可播放链接时不要进入播放流程。原实现会把 musicUrl 置空后照常调用
+  // audioPlayer.playSong()，播放器进入「正在播放」却无声音，且该曲目被标记为当前歌曲，
+  // 后续点击会走「暂停/恢复」分支而不是重新解析音源，表现为点了没反应。
+  if (!url && !bilibili) return
+
   const playableSong = { ...song, musicUrl: url || null }
   const playlist = await buildPlayablePlaylist(song)
   const currentIndex = playlist.findIndex((item) => item.id === song.id)
   audioPlayer.playSong(playableSong, playlist, currentIndex)
-
-  if (!url && !isBilibiliSong(song)) return
 
   // 后台预取后续歌曲的播放链接（不阻塞当前播放）
   ;(async () => {
@@ -1098,6 +1119,11 @@ const playSongWithUrlFetching = async (song) => {
 
 // 切换歌曲播放/暂停
 const togglePlaySong = async (song) => {
+  // 已播放过、且不是当前正在播放的歌曲：先弹确认框询问是否重播，避免误触
+  if (!audioPlayer.isCurrentSong(song.id) && song.played && requestReplayIfPlayed(song)) {
+    return
+  }
+
   // 检查是否为当前歌曲且正在播放
   if (audioPlayer.isCurrentSong(song.id) && audioPlayer.getPlayingStatus().value) {
     // 如果正在播放，则暂停
@@ -1128,6 +1154,22 @@ const togglePlaySong = async (song) => {
   if ((song.musicPlatform && song.musicId) || song.playUrl) {
     await playSongWithUrlFetching(song)
   }
+}
+
+// 已播放过的歌曲再次点击：先确认是否重播，避免误触
+const requestReplayIfPlayed = (song) => {
+  // 当前正在播放/暂停的这首歌走既有暂停/恢复逻辑，不弹确认框
+  if (audioPlayer.isCurrentSong(song.id)) return false
+  if (!song.played) return false
+  confirmDialog.value = {
+    show: true,
+    title: locale.value.replayConfirmTitle,
+    message: callLocale('replayConfirmMessage', '', song.title),
+    type: 'info',
+    action: 'replayConfirmation',
+    data: song
+  }
+  return true
 }
 
 // 构建可播放的播放列表

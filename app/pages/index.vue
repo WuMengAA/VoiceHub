@@ -157,7 +157,7 @@
       <!-- 中间主体内容区域 -->
       <div class="content-area">
         <!-- 选项卡区域-->
-        <div class="tabs-row">
+        <div class="tabs-row" :class="{ 'is-hidden': isFullscreenPlaying }">
           <div
             :class="{ active: activeTab === 'schedule' }"
             class="section-tab"
@@ -1070,6 +1070,9 @@ onUnmounted(() => {
 // 标签页状态
 const activeTab = ref('schedule') // 默认显示播出排期
 
+// 手机端导航栏（tabs-row）常驻显示，仅在全屏播放（全屏歌词）时让出屏幕
+const isFullscreenPlaying = useState<boolean>('audio-player-fullscreen-lyrics', () => false)
+
 // 各标签页滚动位置独立记忆与恢复
 useScrollMemory(() => activeTab.value)
 
@@ -1651,13 +1654,8 @@ const handleRequest = async (songData) => {
         await requestFormRef.value.refreshSubmissionStatus()
       }
 
-      // 如果当前在歌曲列表页，自动切换到该页面
-      if (activeTab.value !== 'songs') {
-        setTimeout(() => {
-          handleTabClick('songs')
-        }, 500)
-      }
-
+      // 投稿成功后停留在当前页：连续投稿时不必每次被弹回歌曲列表。
+      // 列表数据已在上方刷新，之后切回列表看到的仍是最新结果。
       return true
     }
     return false
@@ -3586,15 +3584,15 @@ if (
   .content-area {
     min-height: auto;
     overflow-x: hidden; /* 防止横向溢出 */
+    overflow-x: clip; /* clip 不生成滚动容器，保证顶部导航 sticky 生效 */
     max-width: 100vw; /* 确保不超过视口宽度*/
     box-sizing: border-box; /* 确保padding计入总宽度*/
   }
 
+  /* 手机端导航：吸附在页面顶部，全程可见 */
   .tabs-row {
-    position: fixed;
-    bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
-    left: 1rem;
-    right: 1rem;
+    position: sticky;
+    top: 0;
     margin: 0 auto;
     max-width: 500px;
     display: flex;
@@ -3602,14 +3600,24 @@ if (
     align-items: stretch; /* 修改为stretch 以配合子元素 height: 100% */
     gap: 0;
     padding: 0 0.5rem;
-    height: 64px;
+    height: 56px;
     background: var(--index-footer-bg);
     backdrop-filter: blur(20px) saturate(180%);
     -webkit-backdrop-filter: blur(20px) saturate(180%);
     border: 1px solid var(--overlay-10);
-    border-radius: 9999px;
-    z-index: 1000;
+    border-top: none;
+    border-radius: 0 0 9999px 9999px;
+    z-index: 1100;
     box-shadow: 0 12px 40px var(--mask-60);
+    transition: transform 0.25s ease, opacity 0.25s ease, visibility 0.25s ease;
+  }
+
+  /* 唯一例外：全屏播放时让出屏幕，避免与全屏播放页叠加 */
+  .tabs-row.is-hidden {
+    transform: translateY(-130%);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
   }
 
   .section-tab {

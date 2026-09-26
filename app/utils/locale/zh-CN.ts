@@ -560,6 +560,7 @@ export const pages = {
     tabs: {
       overview: '数据概览',
       songs: '歌曲管理',
+      broadcast: '播控台',
       schedule: '排期管理',
       print: '打印排期',
       users: '用户管理',
@@ -1471,7 +1472,30 @@ export const pages = {
       saveFailed: '保存失败',
       loadFailed: '读取播控配置失败',
       readOnlyHint: '只有管理员及以上权限可以修改播控设置',
-      loading: '读取中…'
+      loading: '读取中…',
+      // 播控台（管理后台）
+      console: {
+        library: '歌曲库',
+        searchPlaceholder: '搜索歌曲名或歌手',
+        libraryEmpty: '没有匹配的歌曲',
+        libraryCount: (count: number) => `共 ${count} 首`,
+        addToQueue: '加入播放单',
+        inQueue: '已在播放单',
+        queueHint: '顺序即播出顺序，可用 ↑ ↓ 调整',
+        moveUp: '上移',
+        moveDown: '下移',
+        playThis: '播放这首',
+        remove: '移出播放单',
+        save: '保存播放单',
+        saving: '保存中…',
+        saved: '播放单已保存',
+        saveFailed: '保存播放单失败',
+        loadFailed: '读取播放单失败',
+        notPlayable: '这首歌没有可用的播放来源',
+        current: '正在播',
+        readyHint: '从左侧挑歌排好播放单，点播放即开始广播',
+        noPermissionHint: '当前账号不具备播控资格，可在播控设置里指定基准播控人'
+      }
     },
     songList: {
       mobileSearchPlaceholder: '搜索点播记录...',
@@ -1546,6 +1570,8 @@ export const pages = {
       alreadyReplayed: '该歌曲已重播',
       alreadyRequestedReplay: '该歌曲已申请过重播',
       musicUrlFailed: '获取音乐播放链接失败',
+      replayConfirmTitle: '再次播放已播歌曲',
+      replayConfirmMessage: (title: string) => `《${title}》已经播放过，确定要再次播放吗？`,
       semesterLoadFailed: '获取学期信息失败，请刷新页面重试',
       platformAutoSwitched: (name: string) => `当前平台已不可用，已自动切换至${name}`
     },
@@ -1903,6 +1929,7 @@ export const admin = {
       schedule: '排期管理',
       print: '打印排期',
       songs: '歌曲管理',
+      broadcastConsole: '播控台',
       dataAnalysis: '数据分析',
       users: '用户管理',
       gradeClass: '年级班级',

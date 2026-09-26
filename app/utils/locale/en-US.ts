@@ -1462,7 +1462,30 @@ export const pages = {
       saveFailed: 'Failed to save',
       loadFailed: 'Failed to load broadcast settings',
       readOnlyHint: 'Only admins and above can change broadcast settings',
-      loading: 'Loading…'
+      loading: 'Loading…',
+      // Broadcast console (admin dashboard)
+      console: {
+        library: 'Song library',
+        searchPlaceholder: 'Search by title or artist',
+        libraryEmpty: 'No matching songs',
+        libraryCount: (count: number) => `${count} songs`,
+        addToQueue: 'Add to queue',
+        inQueue: 'Queued',
+        queueHint: 'This order is the play order — use ↑ ↓ to adjust',
+        moveUp: 'Move up',
+        moveDown: 'Move down',
+        playThis: 'Play this',
+        remove: 'Remove from queue',
+        save: 'Save queue',
+        saving: 'Saving…',
+        saved: 'Queue saved',
+        saveFailed: 'Failed to save the queue',
+        loadFailed: 'Failed to load the queue',
+        notPlayable: 'This song has no playable source',
+        current: 'On air',
+        readyHint: 'Pick songs on the left, then hit play to go on air',
+        noPermissionHint: 'Your account cannot broadcast — set a baseline broadcaster in Broadcast settings'
+      }
     },
     songList: {
       mobileSearchPlaceholder: 'Search requests...',
@@ -1537,6 +1560,8 @@ export const pages = {
       alreadyReplayed: 'This song has been replayed',
       alreadyRequestedReplay: 'Replay already requested',
       musicUrlFailed: 'Failed to get music playback URL',
+      replayConfirmTitle: 'Replay an already-played song',
+      replayConfirmMessage: (title: string) => `"${title}" has already been played. Play it again?`,
       semesterLoadFailed: 'Failed to load semester info. Please refresh and try again',
       platformAutoSwitched: (name: string) => `Current platform is unavailable, switched to ${name}`
     },
@@ -1894,6 +1919,7 @@ export const admin = {
       schedule: 'Schedule',
       print: 'Print',
       songs: 'Songs',
+      broadcastConsole: 'Console',
       dataAnalysis: 'Analytics',
       users: 'Users',
       gradeClass: 'Grade / Class',

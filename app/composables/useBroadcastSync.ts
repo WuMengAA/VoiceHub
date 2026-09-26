@@ -67,6 +67,9 @@ const PUBLISH_THROTTLE_MS = 5000
 const FOLLOW_DRIFT_TOLERANCE = 2
 // 两次校正之间的最小间隔（毫秒）：6 秒，兼顾同步灵敏度与 seek 频率
 const FOLLOW_ALIGN_INTERVAL_MS = 6000
+// 强制对齐漂移阈值（秒）：仅在漂移超出此值（几乎等同于切歌未被捕获）时才强制 seek，
+// 作为兜底。普通播放中途的轻微漂移一律不主动 seek，避免被管理端拖动进度条带着听众跳。
+const FOLLOW_FORCE_SEEK_DRIFT = 30
 // 跟随播放失败后的重试冷却时长
 const FOLLOW_RETRY_COOLDOWN_MS = 60000
 // SSE 断开后的兜底轮询间隔：SSE 在线时不轮询，断开后 20s 一次（比 15s 少 25% 请求）
@@ -643,7 +646,10 @@ export const useBroadcastSync = () => {
     }
 
     const drift = Math.abs((globalAudioPlayer.getCurrentPosition().value || 0) - target)
-    if (drift > FOLLOW_DRIFT_TOLERANCE && getSyncedTimestamp() - lastAlignAt > FOLLOW_ALIGN_INTERVAL_MS) {
+    // 跟随端只在「切歌瞬间」对齐一次进度（上面 songId 变化时已 requestSeek）；
+    // 进入稳定播放后不再因漂移主动 seek，避免被管理端中途拖动进度条带着听众跳，保证听感连续。
+    // 仅当漂移超过 30 秒（几乎等同于切歌未被捕获）才做一次强制对齐兜底。
+    if (drift > FOLLOW_FORCE_SEEK_DRIFT && getSyncedTimestamp() - lastAlignAt > FOLLOW_ALIGN_INTERVAL_MS) {
       lastAlignAt = getSyncedTimestamp()
       await control.seek(target)
     }

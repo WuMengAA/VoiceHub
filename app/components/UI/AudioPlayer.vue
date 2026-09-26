@@ -341,6 +341,15 @@ const isClosing = ref(false)
 const isClosed = ref(false)
 const showLyrics = ref(false)
 const showFullscreenLyrics = ref(false)
+
+// 全局共享：首页据此在手机端隐藏/恢复顶部导航栏（全屏播放时让出屏幕）
+const fullscreenLyricsActive = useState<boolean>('audio-player-fullscreen-lyrics', () => false)
+watch(showFullscreenLyrics, (visible) => {
+  fullscreenLyricsActive.value = visible
+})
+onUnmounted(() => {
+  fullscreenLyricsActive.value = false
+})
 const showQualitySettings = ref(false)
 const coverError = ref(false)
 const useAppleMusicStyle = ref(true) // 默认使用Apple Music风格
@@ -1251,6 +1260,9 @@ const handleStartDrag = (event) => {
     return
   }
 
+  // 播控模式下禁止拖动进度条：避免误操作把全站听众的播放进度带偏（参见 useBroadcastSync 跟随对齐逻辑）
+  if (broadcast.publishEnabled.value) return
+
   // 获取进度条元素引用
   const progressBarElement = event.currentTarget
   if (!progressBarElement) {
@@ -1266,6 +1278,9 @@ const handleStartTouchDrag = (event) => {
     console.error('[AudioPlayer] 音频播放器引用验证失败，无法开始触摸拖拽')
     return
   }
+
+  // 播控模式下禁止拖动进度条：避免误操作把全站听众的播放进度带偏
+  if (broadcast.publishEnabled.value) return
 
   // 获取进度条元素引用
   const progressBarElement = event.currentTarget
