@@ -329,7 +329,8 @@
                 <button
                   class="control-btn viz-theme-btn"
                   :class="{ active: visualizerTheme === 'sonic' }"
-                  :title="visualizerTheme === 'sonic' ? '切换为渐变背景' : '切换为体素可视化'"
+                  :aria-label="isSonicActive ? '音域回响' : '渐变背景'"
+                  :title="isSonicActive ? '音域回响（Sonic Topography）· 点击切换为渐变背景' : '渐变背景 · 点击切换为音域回响'"
                   @click="toggleVisualizerTheme"
                 >
                   <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -415,6 +416,8 @@ const sonicRafId = ref<number | null>(null)
 // 一旦启用过体素主题就保留 iframe（用 v-show 隐藏而非销毁），避免来回切换时重载三维场景
 const sonicEverEnabled = ref(visualizerTheme.value === 'sonic')
 const sonicReady = ref(false)
+// 「音域回响」主题开关的当前状态，供按钮显示名称与激活样式使用
+const isSonicActive = computed(() => visualizerTheme.value === 'sonic')
 
 // 响应式状态
 const showQualitySettings = ref(false)
@@ -1925,6 +1928,16 @@ onUnmounted(() => {
   opacity: 0.3;
   cursor: not-allowed;
   transform: none;
+}
+
+/* 「音域回响」主题开关：激活时高亮，未激活时弱化 */
+.viz-theme-btn {
+  opacity: 0.65;
+}
+
+.viz-theme-btn.active {
+  opacity: 1;
+  filter: drop-shadow(0 0 6px var(--lyrics-modal-text-secondary));
 }
 
 .secondary-btn {

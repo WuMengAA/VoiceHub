@@ -563,6 +563,51 @@
       />
     </g>
 
+    <!-- 站点主题相关图标 -->
+    <g v-else-if="name === 'palette'">
+      <circle cx="13.5" cy="6.5" r=".5" fill="currentColor" />
+      <circle cx="17.5" cy="10.5" r=".5" fill="currentColor" />
+      <circle cx="8.5" cy="7.5" r=".5" fill="currentColor" />
+      <circle cx="6.5" cy="12.5" r=".5" fill="currentColor" />
+      <path d="M12 2a10 10 0 0 0 0 20c.93 0 1.65-.75 1.65-1.68 0-.44-.18-.84-.44-1.13a1.63 1.63 0 0 1-.41-1.09 1.64 1.64 0 0 1 1.67-1.67h2c3.05 0 5.55-2.5 5.55-5.56C21.97 6.01 17.46 2 12 2Z" />
+    </g>
+
+    <g v-else-if="name === 'monitor'">
+      <rect width="20" height="14" x="2" y="3" rx="2" />
+      <path d="M8 21h8" />
+      <path d="M12 17v4" />
+    </g>
+
+    <g v-else-if="name === 'moon'">
+      <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+    </g>
+
+    <g v-else-if="name === 'sun'">
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2" />
+      <path d="M12 20v2" />
+      <path d="m4.93 4.93 1.41 1.41" />
+      <path d="m17.66 17.66 1.41 1.41" />
+      <path d="M2 12h2" />
+      <path d="M20 12h2" />
+      <path d="m6.34 17.66-1.41 1.41" />
+      <path d="m19.07 4.93-1.41 1.41" />
+    </g>
+
+    <g v-else-if="name === 'sparkles'">
+      <path d="M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.97L8.5 9.94A2 2 0 0 0 9.94 8.5l1.57-6.14a.5.5 0 0 1 .97 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.14 1.57a.5.5 0 0 1 0 .97l-6.14 1.58a2 2 0 0 0-1.44 1.44l-1.57 6.14a.5.5 0 0 1-.97 0Z" />
+      <path d="M20 3v4" />
+      <path d="M22 5h-4" />
+      <path d="m4 17 2 2" />
+      <path d="m5 21-2-2" />
+    </g>
+
+    <!-- 「一起听」图标 -->
+    <g v-else-if="name === 'headphones'">
+      <path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-3a2 2 0 0 1 2-2h3" />
+      <path d="M21 15a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h7a2 2 0 0 0 2-2Z" />
+    </g>
+
     <!-- 语言/翻译图标 (文 / A) -->
     <g
       v-else-if="name === 'globe' || name === 'language' || name === 'translate'"

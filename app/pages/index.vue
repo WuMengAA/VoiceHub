@@ -32,11 +32,11 @@
                   type="button"
                   class="theme-switcher-trigger"
                   :class="{ 'is-open': showThemeMenu }"
-                  :aria-label="'主题'"
+                  :aria-label="themeLocale.select"
                   :aria-expanded="showThemeMenu"
                   @click="toggleThemeMenu"
                 >
-                  <Icon name="gift" :size="19" />
+                  <Icon name="palette" :size="19" />
                 </button>
 
                 <Transition name="dropdown-fade">
@@ -51,7 +51,8 @@
                       :aria-selected="selectedTheme === themeItem"
                       @click="selectTheme(themeItem)"
                     >
-                      {{ getThemeLabel(themeItem) }}
+                      <Icon :name="getThemeIcon(themeItem)" :size="15" class="theme-option-icon" />
+                      <span>{{ getThemeLabel(themeItem) }}</span>
                     </button>
                   </div>
                 </Transition>
@@ -1026,6 +1027,18 @@ const selectTheme = (theme) => {
 
 const getThemeLabel = (theme) => {
   return themeLocale.value[theme]
+}
+
+// 主题的显示图标（Icon.vue 自绘白名单内的名称）
+const THEME_ICONS = {
+  System: 'monitor',
+  ClassicDark: 'moon',
+  ClassicLight: 'sun',
+  ModernLight: 'sparkles'
+}
+
+const getThemeIcon = (theme) => {
+  return THEME_ICONS[theme] || 'palette'
 }
 
 // 监听用户头像变化，重置错误状态
@@ -2212,7 +2225,9 @@ if (
 }
 
 .theme-option {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   padding: 10px 12px;
   border: 0;
   border-radius: 8px;
@@ -2223,6 +2238,15 @@ if (
   transition: all 0.2s;
   width: 100%;
   text-align: left;
+}
+
+.theme-option-icon {
+  flex: none;
+  opacity: 0.7;
+}
+
+.theme-option.is-active .theme-option-icon {
+  opacity: 1;
 }
 
 .theme-option:hover,

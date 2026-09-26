@@ -51,7 +51,7 @@
           type="button"
           @click="toggleFollow"
         >
-          <Icon :size="14" :name="followEnabled ? 'pause' : 'play'" />
+          <Icon :size="14" name="headphones" />
           <span>{{ followEnabled ? locale.followOff : locale.followOn }}</span>
         </button>
         <button
@@ -135,8 +135,6 @@
 import { computed, defineAsyncComponent, onMounted, onUnmounted, ref } from 'vue'
 import Icon from '~/components/UI/Icon.vue'
 import BroadcastSettingsModal from '~/components/Songs/BroadcastSettingsModal.vue'
-// 播放单管理弹窗按需才开，懒加载减小首屏 JS
-const BroadcastQueueModal = defineAsyncComponent(() => import('~/components/Songs/BroadcastQueueModal.vue'))
 import { useToast } from '~/composables/useToast'
 import { convertToHttps } from '~/utils/url'
 import { useLocale } from '~/utils/locale'
@@ -146,6 +144,8 @@ const { songs: songsLocale } = useLocale()
 const locale = computed(() => songsLocale.value?.broadcast || {})
 const broadcastSync = useBroadcastSync()
 const toast = useToast()
+// 播放单管理弹窗按需才开，懒加载减小首屏 JS
+const BroadcastQueueModal = defineAsyncComponent(() => import('~/components/Songs/BroadcastQueueModal.vue'))
 
 const broadcast = broadcastSync.broadcast
 const followEnabled = broadcastSync.followEnabled
