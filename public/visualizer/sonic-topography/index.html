@@ -103,14 +103,34 @@
         }
       });
 
+      // 画质下调①：渲染像素比
+      // 资源包用 react-three-fiber，其 Canvas 的 dpr 默认 [1,2]，会按 window.devicePixelRatio
+      // 取上限 —— 在缩放 200% 的高分屏上等于按 2 倍分辨率渲染，片元数翻两番。
+      // 本站是低多边形体素风，压到 1 倍观感差别很小，填充率却降 75%。
+      // 本页面（iframe 内）全局只有 r3f 那一处读 devicePixelRatio，所以改写是安全的；
+      // 想恢复原生像素比，删掉这一段即可（点击交互按 CSS 像素计算，不受影响）。
+      (function () {
+        try {
+          Object.defineProperty(window, 'devicePixelRatio', {
+            configurable: true,
+            get: function () { return 1 }
+          });
+        } catch (err) {}
+      })();
+
       // 站点侧参数注入
       // Wallpaper Engine 里这些参数（见 project.json 的 general.properties）由引擎经
       // wallpaperPropertyListener.applyUserProperties 下发，资源包据此覆盖内置默认值。
-      // 本站没有引擎，不喂的话可视化会一直用内置默认（波纹灵敏度 .22 / 流星灵敏度 .4）。
+      // 本站没有引擎，不喂的话可视化会一直用内置默认（渲染精度 160 / 波纹灵敏度 .22 /
+      // 流星灵敏度 .4）。
       // 资源包对「组件尚未挂载时收到的属性」有缓存（挂载后 et(eg) 补应用），
       // 所以这里只需等 window.wallpaperPropertyListener 出现，执行时机不敏感。
       (function () {
         var VH_USER_PROPERTIES = {
+          // 渲染精度：即画质。档位 120/160/320/640/1080/4096，内置默认 160。
+          // 场景世界尺寸固定 168，gridSize 是「每边体素数」，体素总数 = gridSize²
+          // （160 → 25,600 个方块，120 → 14,400，约少 44%），取最低档。
+          gridSize: { value: 120 },
           // 波纹灵敏度：滑块范围 0.05~0.5，取最大 → 节拍触发阈值最低、波纹最敏感
           pulseSensitivity: { value: 0.5 },
           // 流星灵敏度：滑块范围 0.1~0.8，取最大 → 流星出现最积极
