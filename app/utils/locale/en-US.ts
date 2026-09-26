@@ -127,7 +127,7 @@ export const siteConfig = {
   guidelinesPlaceholder: 'Enter submission guidelines (Markdown supported)',
   guidelinesEdit: 'Edit',
   guidelinesPreview: 'Preview',
-  defaultSiteTitle: 'Campus Radio Request System',
+  defaultSiteTitle: 'Xingli Campus Radio',
   defaultSubmissionGuidelines: `1. Do not include book-title brackets when submitting.
 2. Songs of all genres except DJ tracks are accepted, including songs in minority languages.
 3. Songs containing prohibited content are not allowed.
@@ -545,7 +545,7 @@ export const pages = {
   dashboard: {
     backToTop: 'Back to Top',
     fallbackTitle: 'Admin Dashboard',
-    defaultSiteTitle: 'Campus Radio Song Request System',
+    defaultSiteTitle: 'Xingli Campus Radio',
     tabs: {
       overview: 'Overview',
       songs: 'Song Management',
@@ -610,7 +610,7 @@ export const pages = {
     dashboard: 'Dashboard',
     logout: 'Log Out',
     login: 'Log In',
-    subtitle: 'VoiceHub Campus Radio System',
+    subtitle: 'Campus Radio System',
     tabs: {
       schedule: 'Schedule',
       songs: 'Songs',
@@ -4521,3 +4521,16 @@ export const serverErrors = {
   NOTIFICATION_HISTORY_UPDATE_FAILED: 'Failed to update notification',
   NOTIFICATION_HISTORY_DELETE_FAILED: 'Failed to delete notification',
 } as const
+
+// "Install web app" prompt (PWA install guidance)
+export const installApp = {
+  title: 'Download Web App',
+  // {0} is the site name
+  description: 'Install "{0}" to your desktop or home screen and open it like a native app',
+  install: 'Install now',
+  later: 'Not now',
+  installed: 'Installed',
+  iosHint: 'Tap the Share button at the bottom of Safari, then choose "Add to Home Screen"',
+  manualHint: 'Open the browser menu and choose "Install app" or "Add to Home Screen"',
+  gotIt: 'Got it'
+}

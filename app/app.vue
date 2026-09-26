@@ -14,6 +14,9 @@
     <!-- PWA 更新提示（底部，检测到新版本时弹「立即更新」，替代 autoUpdate 的无预警整页刷新） -->
     <PwaUpdatePrompt />
 
+    <!-- 安装提示（支持的浏览器弹出「下载网页应用」，安装后即为独立应用） -->
+    <InstallAppPrompt />
+
     <!-- 微信/QQ 内置浏览器账号密码登录后的绑定引导 -->
     <OAuthBindReminderModal />
 
@@ -44,7 +47,13 @@ import { useImportantNotification } from '~/composables/useImportantNotification
 import ImportantNotificationModal from '~/components/UI/ImportantNotificationModal.vue'
 import VersionUpdateBanner from '~/components/UI/VersionUpdateBanner.vue'
 import OAuthBindReminderModal from '~/components/Auth/OAuthBindReminderModal.vue'
+import InstallAppPrompt from '~/components/UI/InstallAppPrompt.vue'
+import { useSiteMeta } from '~/composables/useSiteMeta'
 import { useRoute } from 'vue-router'
+
+// 站点信息（名称/描述/分享缩略图）在 SSR 阶段写入 head，
+// 避免站外抓取到的仍是构建期默认名、而站内标题要进站后才刷新
+useSiteMeta()
 
 const route = useRoute()
 const { user, isAuthenticated } = useAuth()

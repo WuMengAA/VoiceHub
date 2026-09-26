@@ -1153,7 +1153,10 @@ const saveConfig = async () => {
         schoolLogoHomeDarkUrl,
         schoolLogoHomeLightUrl
       ),
-      siteTitle: (formData.value.siteTitle || '').trim() || locale.value?.defaultSiteTitle || 'VoiceHub',
+      siteTitle:
+        (formData.value.siteTitle || '').trim() ||
+        locale.value?.defaultSiteTitle ||
+        '星璃校园广播',
       siteLogoUrl: (formData.value.siteLogoUrl || '').trim() || '/favicon.ico',
       submissionGuidelines:
         (formData.value.submissionGuidelines || '').trim() || defaultSubmissionGuidelines.value,

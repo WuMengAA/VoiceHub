@@ -1084,7 +1084,9 @@ onUnmounted(() => {
 const activeTab = ref('schedule') // 默认显示播出排期
 
 // 手机端导航栏（tabs-row）常驻显示，仅在全屏播放（全屏歌词）时让出屏幕
-const isFullscreenPlaying = useState<boolean>('audio-player-fullscreen-lyrics', () => false)
+// 注意：本文件是纯 JS 的 <script setup>，不要在这里写 TS 泛型调用 ——
+// 泛型语法会被当成比较表达式，运行时报 "boolean is not defined" 并让 SSR 直接 500
+const isFullscreenPlaying = useState('audio-player-fullscreen-lyrics', () => false)
 
 // 各标签页滚动位置独立记忆与恢复
 useScrollMemory(() => activeTab.value)
@@ -1483,8 +1485,10 @@ const updateSongCounts = async (semester = null) => {
 // 并与 og:title 保持一致；加载完成后切换为数据库配置的站点标题
 const pageTitle = computed(() => {
   if (showBootLoading.value) {
-    const bootTitle = isLoaded.value ? siteTitle.value : config.public.siteTitle
-    return bootTitle ? `${locale.value.titleLoading} | ${bootTitle}` : locale.value.titleLoading
+    // 启动加载阶段同样输出真实站点名：这段标题会被外部抓取（搜索引擎 / 分享卡片 /
+    // 浏览器标签页），不能带「加载中」这类瞬时状态词，否则站外看到的站点名是错的。
+    // 优先取数据库配置，未就绪时回退构建期配置
+    return (isLoaded.value ? siteTitle.value : config.public.siteTitle) || siteTitle.value
   }
   return `${locale.value.titleHome} | ${siteTitle.value}`
 })

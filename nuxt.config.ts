@@ -14,13 +14,18 @@ try {
 }
 
 const siteTitle =
-  customSeoConfig.title || process.env.NUXT_PUBLIC_SITE_TITLE || 'VoiceHub校园广播站点歌系统'
-const siteShortName = customSeoConfig.shortName || '校园广播'
+  customSeoConfig.title || process.env.NUXT_PUBLIC_SITE_TITLE || '星璃校园广播'
+const siteShortName =
+  customSeoConfig.shortName || process.env.NUXT_PUBLIC_SITE_SHORT_NAME || '星璃'
 const siteDescription =
   customSeoConfig.description ||
   process.env.NUXT_PUBLIC_SITE_DESCRIPTION ||
-  '校园广播站点歌系统 - 让你的声音被听见'
+  '星璃校园广播 —— 校园点歌、广播排期与一起听'
 const siteLogo = customSeoConfig.logo || process.env.NUXT_PUBLIC_SITE_LOGO || '/themes/ClassicDark/logo.svg'
+// 社交分享缩略图：必须是位图（微信/QQ/微博等抓取器不解析 SVG），故单独维护一张 1200x630 的 PNG
+const siteOgImage = process.env.NUXT_PUBLIC_SITE_OG_IMAGE || '/og-image.png'
+const SITE_OG_IMAGE_WIDTH = 1200
+const SITE_OG_IMAGE_HEIGHT = 630
 
 // 读取应用版本号（package.json version），注入运行时配置供前端做“版本更新提示”对比
 const appVersion = (() => {
@@ -65,20 +70,24 @@ const sentryRuntimeEnabled =
     : process.env.NODE_ENV === 'production' && !isPreviewDeployment
 const jwtSecret = process.env.JWT_SECRET || ''
 
-// 构造绝对路径 Logo URL 用于 SEO 标签，如果没有 host，则回退为相对路径
+// 构造绝对路径资源 URL 用于 SEO 标签，如果没有 host，则回退为相对路径
 const host = process.env.NUXT_PUBLIC_HOST
 if (!host && !siteLogo.startsWith('http') && process.env.NODE_ENV === 'production') {
   console.warn(
     '警告: 在生产环境中未配置 NUXT_PUBLIC_HOST，且 siteLogo 使用了相对路径。这可能会导致网站无法正确抓取和显示预览图。'
   )
 }
-const absoluteLogo =
-  siteLogo.startsWith('http') || siteLogo.startsWith('//') || !host
-    ? siteLogo
+// SEO 标签（og:image / twitter:image）必须是可被外部抓取的绝对 URL
+const toAbsoluteSiteUrl = (path: string) =>
+  path.startsWith('http') || path.startsWith('//') || !host
+    ? path
     : (host.startsWith('http') ? '' : 'https://') +
       host.replace(/\/$/, '') +
       '/' +
-      siteLogo.replace(/^\//, '')
+      path.replace(/^\//, '')
+
+// 分享缩略图走绝对 URL；og:image / twitter:image 均引用它
+const absoluteOgImage = toAbsoluteSiteUrl(siteOgImage)
 
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
@@ -617,8 +626,10 @@ export default defineNuxtConfig({
         google: !!process.env.GOOGLE_CLIENT_ID
       },
       siteTitle,
+      siteShortName,
       siteLogo,
       siteDescription,
+      ogImage: absoluteOgImage,
       appVersion,
       isNetlify: process.env.NETLIFY === 'true',
       sentry: {
@@ -681,22 +692,32 @@ export default defineNuxtConfig({
         { property: 'og:title', content: siteTitle },
         { property: 'og:description', content: siteDescription },
         { property: 'og:site_name', content: siteTitle },
-        { property: 'og:image', content: absoluteLogo },
+        { property: 'og:locale', content: 'zh_CN' },
+        { property: 'og:image', content: absoluteOgImage },
+        { property: 'og:image:secure_url', content: absoluteOgImage },
+        { property: 'og:image:type', content: 'image/png' },
+        { property: 'og:image:width', content: String(SITE_OG_IMAGE_WIDTH) },
+        { property: 'og:image:height', content: String(SITE_OG_IMAGE_HEIGHT) },
+        { property: 'og:image:alt', content: siteTitle },
         // Twitter 标签
-        { name: 'twitter:card', content: 'summary' },
+        { name: 'twitter:card', content: 'summary_large_image' },
         { name: 'twitter:title', content: siteTitle },
         { name: 'twitter:description', content: siteDescription },
-        { name: 'twitter:image', content: absoluteLogo },
+        { name: 'twitter:image', content: absoluteOgImage },
         // 移动端优化
         { name: 'theme-color', content: '#111111' },
         { name: 'apple-mobile-web-app-capable', content: 'yes' },
         { name: 'apple-mobile-web-app-status-bar-style', content: 'black-translucent' },
         { name: 'apple-mobile-web-app-title', content: siteShortName },
         { name: 'mobile-web-app-capable', content: 'yes' },
+        { name: 'application-name', content: siteShortName },
         { name: 'format-detection', content: 'telephone=no' }
       ],
       link: [
         { rel: 'icon', type: 'image/x-icon', href: '/favicon.ico' },
+        { rel: 'icon', type: 'image/png', sizes: '192x192', href: '/pwa-192x192.png' },
+        { rel: 'icon', type: 'image/png', sizes: '512x512', href: '/pwa-512x512.png' },
+        { rel: 'apple-touch-icon', sizes: '180x180', href: '/apple-touch-icon.png' },
         // 优先加载常规字体，确保页面快速显示
         {
           rel: 'preload',
@@ -790,7 +811,24 @@ export default defineNuxtConfig({
       },
       '/favicon.ico': {
         headers: {
-          'Cache-Control': 'public, max-age=86400'
+          'Cache-Control': 'public, max-age=3600'
+        }
+      },
+      // 站点品牌资源（图标族 / 社交分享缩略图）：后台改名换图后需要能被外部重新抓取，
+      // 故不能用下方 /**/*.png 的 immutable 长缓存，否则分享卡片与安装图标会长期停留在旧图
+      '/apple-touch-icon.png': {
+        headers: {
+          'Cache-Control': 'public, max-age=3600'
+        }
+      },
+      '/og-image.png': {
+        headers: {
+          'Cache-Control': 'public, max-age=3600'
+        }
+      },
+      '/pwa-*.png': {
+        headers: {
+          'Cache-Control': 'public, max-age=3600'
         }
       },
       // 图片、CSS、JS等静态资源缓存
@@ -917,18 +955,25 @@ export default defineNuxtConfig({
       orientation: 'portrait',
       scope: '/',
       start_url: '/',
+      lang: 'zh-CN',
       icons: [
         {
-          src: '/assets/logo.png',
-          sizes: '128x128',
+          src: '/pwa-192x192.png',
+          sizes: '192x192',
           type: 'image/png',
           purpose: 'any'
         },
         {
-          src: '/assets/logo-144.png',
-          sizes: '144x144',
+          src: '/pwa-512x512.png',
+          sizes: '512x512',
           type: 'image/png',
           purpose: 'any'
+        },
+        {
+          src: '/pwa-maskable-512x512.png',
+          sizes: '512x512',
+          type: 'image/png',
+          purpose: 'maskable'
         }
       ]
     },

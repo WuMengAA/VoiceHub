@@ -137,7 +137,7 @@ export const siteConfig = {
   guidelinesPlaceholder: '请输入投稿须知内容（支持 Markdown 格式）',
   guidelinesEdit: '编辑',
   guidelinesPreview: '预览',
-  defaultSiteTitle: '校园广播站点歌系统',
+  defaultSiteTitle: '星璃校园广播',
   defaultSubmissionGuidelines: `1. 投稿时无需加入书名号
 2. 除DJ外，其他类型歌曲均接收（包括小语种）
 3. 禁止投递含有违规内容的歌曲
@@ -556,7 +556,7 @@ export const pages = {
   dashboard: {
     backToTop: '返回顶部',
     fallbackTitle: '管理后台',
-    defaultSiteTitle: '校园广播站点歌系统',
+    defaultSiteTitle: '星璃校园广播',
     tabs: {
       overview: '数据概览',
       songs: '歌曲管理',
@@ -622,7 +622,7 @@ export const pages = {
     dashboard: '管理后台',
     logout: '退出登录',
     login: '登录',
-    subtitle: 'VoiceHub 校园广播系统',
+    subtitle: '校园广播系统',
     tabs: {
       schedule: '播出排期',
       songs: '歌曲列表',
@@ -4531,3 +4531,17 @@ export const serverErrors = {
   NOTIFICATION_HISTORY_UPDATE_FAILED: '修改通知失败',
   NOTIFICATION_HISTORY_DELETE_FAILED: '删除通知失败',
 } as const
+
+// 「下载网页应用」安装提示（PWA 安装引导）
+export const installApp = {
+  title: '下载网页应用',
+  // {0} 为站点名称
+  description: '把「{0}」装到桌面或主屏，像 App 一样直接打开，无需每次输入网址',
+  install: '立即安装',
+  later: '稍后再说',
+  installed: '已安装',
+  // iOS Safari 不支持自动安装，需手动「添加到主屏幕」
+  iosHint: '点击 Safari 底部的「分享」按钮，再选择「添加到主屏幕」',
+  manualHint: '打开浏览器菜单，选择「安装应用」或「添加到主屏幕」',
+  gotIt: '知道了'
+}

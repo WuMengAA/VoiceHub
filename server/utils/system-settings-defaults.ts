@@ -17,11 +17,11 @@ export const normalizeScheduleVisibilitySettings = (settings) => {
 export const SYSTEM_SETTINGS_DEFAULTS = {
   telemetryEnabled: true,
   enablePlayTimeSelection: false,
-  siteTitle: 'VoiceHub',
+  siteTitle: '星璃校园广播',
   siteLogoUrl: '/favicon.ico',
   schoolLogoHomeUrl: null,
   schoolLogoPrintUrl: null,
-  siteDescription: '校园广播站点歌系统 - 让你的声音被听见',
+  siteDescription: '星璃校园广播 —— 校园点歌、广播排期与一起听',
   submissionGuidelines: `1. 投稿时无需加入书名号
 2. 除DJ外，其他类型歌曲均接收（包括小语种）
 3. 禁止投递含有违规内容的歌曲
