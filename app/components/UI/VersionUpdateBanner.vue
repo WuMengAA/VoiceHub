@@ -51,9 +51,11 @@ import { useRuntimeConfig } from '#imports'
 
 // 每次发版在此更新亮点文案（面向最终用户，简要列出本版主要改进）
 const highlights = [
-  '移动端首页站点标题已恢复显示',
-  '广播播放器同步更稳定，跨平台切歌不再卡顿',
-  '后台与移动端性能优化，首屏加载更快'
+  '「运动会」联动更新',
+  '播放器主题「音域响应」上线',
+  '「一起听」功能上线',
+  '修复了一些已知 bug',
+  '内核版本更新至 1.6.0.0'
 ]
 
 const STORAGE_KEY = 'voicehub-seen-version'
