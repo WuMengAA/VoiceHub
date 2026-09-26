@@ -18,7 +18,7 @@
           class="flex items-start gap-3 px-4 py-3 text-white sm:items-center sm:gap-4 sm:px-6 sm:py-3.5"
           style="background: linear-gradient(135deg, var(--primary, #3b82f6), #8b5cf6)"
         >
-          <div class="mt-0.5 shrink-0 text-xl leading-none sm:mt-0" aria-hidden="true">🚀</div>
+          <div class="mt-0.5 shrink-0 text-xl leading-none sm:mt-0" aria-hidden="true">🎧</div>
 
           <div class="min-w-0 flex-1">
             <p class="text-sm font-black leading-tight drop-shadow-sm sm:text-base">
@@ -52,7 +52,7 @@ import { useRuntimeConfig } from '#imports'
 // 每次发版在此更新亮点文案（面向最终用户，简要列出本版主要改进）
 const highlights = [
   '「运动会」联动更新',
-  '播放器主题「音域响应」上线',
+  '播放器主题「音域回响」上线',
   '「一起听」功能上线',
   '修复了一些已知 bug',
   '内核版本更新至 1.6.0.0'
