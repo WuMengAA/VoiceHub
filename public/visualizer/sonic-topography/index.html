@@ -102,6 +102,33 @@
           }
         }
       });
+
+      // 站点侧参数注入
+      // Wallpaper Engine 里这些参数（见 project.json 的 general.properties）由引擎经
+      // wallpaperPropertyListener.applyUserProperties 下发，资源包据此覆盖内置默认值。
+      // 本站没有引擎，不喂的话可视化会一直用内置默认（波纹灵敏度 .22 / 流星灵敏度 .4）。
+      // 资源包对「组件尚未挂载时收到的属性」有缓存（挂载后 et(eg) 补应用），
+      // 所以这里只需等 window.wallpaperPropertyListener 出现，执行时机不敏感。
+      (function () {
+        var VH_USER_PROPERTIES = {
+          // 波纹灵敏度：滑块范围 0.05~0.5，取最大 → 节拍触发阈值最低、波纹最敏感
+          pulseSensitivity: { value: 0.5 },
+          // 流星灵敏度：滑块范围 0.1~0.8，取最大 → 流星出现最积极
+          meteorSensitivity: { value: 0.8 }
+        };
+        var attempts = 0;
+        (function applyWhenReady() {
+          var listener = window.wallpaperPropertyListener;
+          if (listener && typeof listener.applyUserProperties === 'function') {
+            try {
+              listener.applyUserProperties(VH_USER_PROPERTIES);
+            } catch (err) {}
+            return;
+          }
+          // 模块脚本尚未执行：约 16ms 重试一次，最多约 10 秒
+          if (++attempts < 600) setTimeout(applyWhenReady, 16);
+        })();
+      })();
     </script>
     <script type="module" crossorigin src="assets/index-CSU_B_T9.js"></script>
     <link rel="stylesheet" crossorigin href="assets/index-DgmMz9-g.css">
