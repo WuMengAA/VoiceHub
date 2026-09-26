@@ -134,7 +134,11 @@
           // 波纹灵敏度：滑块范围 0.05~0.5，取最大 → 节拍触发阈值最低、波纹最敏感
           pulseSensitivity: { value: 0.5 },
           // 流星灵敏度：滑块范围 0.1~0.8，取最大 → 流星出现最积极
-          meteorSensitivity: { value: 0.8 }
+          meteorSensitivity: { value: 0.8 },
+          // 空闲波浪：关掉。这个选项负责「没有音频输入时地形自己起伏波浪、
+          // 方块随之上下弹跳」——待机画面里那层自己动的波。关掉后待机是静止
+          // 平面，有音乐时的表现完全不受影响（不要恢复成 true）。
+          idleWaveEnabled: { value: false }
         };
         var attempts = 0;
         (function applyWhenReady() {
