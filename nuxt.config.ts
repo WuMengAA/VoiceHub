@@ -686,8 +686,8 @@ export default defineNuxtConfig({
         },
         // Bing Webmaster Tools 站点验证（HTML Meta 标记法，勿删）
         { name: 'msvalidate.01', content: 'F42651CFE567430CDAEB13683811C2DD' },
-        // 百度搜索资源平台站点验证（HTML Meta 标记法，勿删）
-        { name: 'baidu-site-verification', content: 'codeva-0fDIULeu3o' },
+        // 百度搜索资源平台站点验证（音乐站，HTML Meta 标记法，勿删）
+        { name: 'baidu-site-verification', content: 'codeva-ZLfZUfhdm2' },
         // Open Graph 标签
         { property: 'og:type', content: 'website' },
         { property: 'og:title', content: siteTitle },
