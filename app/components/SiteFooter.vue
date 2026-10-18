@@ -27,6 +27,7 @@
           {{ gonganNumber }}
         </a>
       </span>
+      <span class="footer-item">咸林中学校园广播站</span>
       <span v-if="siteTitle" class="footer-item">© {{ currentYear }} {{ siteTitle }}</span>
       <span v-else class="footer-item">© {{ currentYear }} {{ copyrightOwner }}</span>
       <span class="footer-item">{{ common?.workerIn || 'Worker in' }} {{ responseTime }}ms</span>

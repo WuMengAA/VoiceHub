@@ -13,12 +13,12 @@ try {
 }
 
 const siteTitle =
-  customSeoConfig.title || process.env.NUXT_PUBLIC_SITE_TITLE || 'VoiceHub校园广播站点歌系统'
+  customSeoConfig.title || process.env.NUXT_PUBLIC_SITE_TITLE || '咸林中学校园广播站（星璃校园点歌）'
 const siteShortName = customSeoConfig.shortName || '校园广播'
 const siteDescription =
   customSeoConfig.description ||
   process.env.NUXT_PUBLIC_SITE_DESCRIPTION ||
-  '校园广播站点歌系统 - 让你的声音被听见'
+  '咸林中学校园广播站（星璃校园点歌）是面向全校同学的校园广播站点歌平台，支持在线点歌、播放排期与播前审核。'
 const siteLogo = customSeoConfig.logo || process.env.NUXT_PUBLIC_SITE_LOGO || '/themes/ClassicDark/logo.svg'
 
 const readNumberEnv = (value: string | undefined, fallback: number): number => {
@@ -67,6 +67,11 @@ const absoluteLogo =
       host.replace(/\/$/, '') +
       '/' +
       siteLogo.replace(/^\//, '')
+
+// SEO 规范化域名：优先使用部署环境变量 NUXT_PUBLIC_HOST，回退到 voicehub 正式域名
+const canonicalOrigin = host
+  ? (host.startsWith('http') ? host : 'https://' + host).replace(/\/$/, '')
+  : 'https://voicehub.245959623.xyz'
 
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
@@ -648,6 +653,18 @@ export default defineNuxtConfig({
           tagPriority: 'critical',
           // 与 useTheme.ts 默认逻辑一致：无保存值或非法值时回退 ClassicDark；System 按系统配色偏好解析
           innerHTML: "(function(){var t='ClassicDark';try{var s=localStorage.getItem('voicehub-theme');if(['ClassicDark','ClassicLight','ModernLight'].indexOf(s)>-1){t=s}else if(s==='System'){t=window.matchMedia('(prefers-color-scheme: dark)').matches?'ClassicDark':'ClassicLight'}}catch(e){}document.documentElement.setAttribute('data-theme',t)})()"
+        },
+        {
+          type: 'application/ld+json',
+          tagPriority: 'low',
+          innerHTML: JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'Organization',
+            name: '咸林中学校园广播站',
+            alternateName: siteTitle,
+            url: canonicalOrigin + '/',
+            description: '咸林中学校园广播站（星璃校园点歌）是面向全校同学的校园广播站点歌平台，支持在线点歌、播放排期与播前审核。'
+          })
         }
       ],
       title: siteTitle,
@@ -663,6 +680,12 @@ export default defineNuxtConfig({
           name: 'description',
           content: siteDescription
         },
+        {
+          name: 'keywords',
+          content: '咸林中学校园广播站,校园广播站,校园点歌,星璃校园广播,咸林中学,校园广播站点歌系统'
+        },
+        // Bing Webmaster Tools 站点验证（HTML Meta 标记法，勿删）
+        { name: 'msvalidate.01', content: 'F42651CFE567430CDAEB13683811C2DD' },
         // Open Graph 标签
         { property: 'og:type', content: 'website' },
         { property: 'og:title', content: siteTitle },
@@ -684,6 +707,7 @@ export default defineNuxtConfig({
       ],
       link: [
         { rel: 'icon', type: 'image/x-icon', href: '/favicon.ico' },
+        { rel: 'canonical', href: canonicalOrigin + '/' },
         // 优先加载常规字体，确保页面快速显示
         {
           rel: 'preload',
