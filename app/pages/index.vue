@@ -152,6 +152,7 @@
           <h1 class="main-title">{{ siteTitle }}</h1>
           <div class="title-divider" />
           <span class="sub-title">{{ locale.subtitle }}</span>
+          <p class="site-intro">咸林中学校园广播站（星璃校园点歌）是面向全校同学的校园广播站点歌平台，支持在线点歌、播放排期与播前审核，让每一份点歌心愿都能通过广播站被听见。</p>
         </div>
       </div>
 
@@ -2460,6 +2461,17 @@ if (
   color: var(--overlay-40);
   letter-spacing: 0.2em;
   text-transform: uppercase;
+}
+
+.site-intro {
+  max-width: 32rem;
+  margin: 0.5rem 0 0;
+  font-family: 'MiSans', sans-serif;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.7;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.65));
+  text-align: center;
 }
 
 /* 内容区域结构 */
