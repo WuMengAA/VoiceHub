@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://voicehub.245959.xyz/sitemap.xml
+Sitemap: https://voicehub.245959623.xyz/sitemap.xml
