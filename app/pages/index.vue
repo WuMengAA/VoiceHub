@@ -149,7 +149,7 @@
 
       <div v-if="siteTitle" class="site-title">
         <div class="title-container">
-          <h2 class="main-title">{{ siteTitle }}</h2>
+          <h1 class="main-title">{{ siteTitle }}</h1>
           <div class="title-divider" />
           <span class="sub-title">{{ locale.subtitle }}</span>
         </div>
