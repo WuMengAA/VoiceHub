@@ -1,4 +1,5 @@
 import { isVoiceHubApi } from '~/utils/url'
+import { redirectToChangePassword } from '~/utils/authRedirect'
 
 export default defineNuxtPlugin({
   name: 'auth-client',
@@ -8,7 +9,6 @@ export default defineNuxtPlugin({
     const originalFetch = window.fetch
     const errorHandler = useErrorHandler()
     const auth = useAuth()
-    const router = useRouter()
     let passwordStateRefresh: Promise<unknown> | null = null
 
     const refreshPasswordState = async () => {
@@ -42,7 +42,7 @@ export default defineNuxtPlugin({
         auth.user.value?.requirePasswordChange === true &&
         window.location.pathname !== '/change-password'
       ) {
-        await router.replace('/change-password')
+        await redirectToChangePassword()
       }
       return true
     }

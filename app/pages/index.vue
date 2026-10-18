@@ -32,11 +32,11 @@
                   type="button"
                   class="theme-switcher-trigger"
                   :class="{ 'is-open': showThemeMenu }"
-                  :aria-label="'主题'"
+                  :aria-label="themeLocale.select"
                   :aria-expanded="showThemeMenu"
                   @click="toggleThemeMenu"
                 >
-                  <Icon name="gift" :size="19" />
+                  <Icon name="palette" :size="19" />
                 </button>
 
                 <Transition name="dropdown-fade">
@@ -51,7 +51,8 @@
                       :aria-selected="selectedTheme === themeItem"
                       @click="selectTheme(themeItem)"
                     >
-                      {{ getThemeLabel(themeItem) }}
+                      <Icon :name="getThemeIcon(themeItem)" :size="15" class="theme-option-icon" />
+                      <span>{{ getThemeLabel(themeItem) }}</span>
                     </button>
                   </div>
                 </Transition>
@@ -157,7 +158,7 @@
       <!-- 中间主体内容区域 -->
       <div class="content-area">
         <!-- 选项卡区域-->
-        <div class="tabs-row">
+        <div class="tabs-row" :class="{ 'is-hidden': isFullscreenPlaying }">
           <div
             :class="{ active: activeTab === 'schedule' }"
             class="section-tab"
@@ -213,6 +214,9 @@
             </template>
           </ClientOnly>
         </div>
+
+        <!-- 校园广播正在播放条：学生端同步管理员播放的歌曲与进度 -->
+        <SongsBroadcastNowPlaying />
 
         <!-- 内容区域 -->
         <div class="tab-content-container">
@@ -843,6 +847,7 @@ import Icon from '~/components/UI/Icon.vue'
 import AppSpinner from '~/components/UI/Common/AppSpinner.vue'
 import ConfirmDialog from '~/components/UI/ConfirmDialog.vue'
 import AppLoadingScreen from '~/components/UI/AppLoadingScreen.vue'
+import SongsBroadcastNowPlaying from '~/components/Songs/BroadcastNowPlaying.vue'
 
 import { useNotifications } from '~/composables/useNotifications'
 import { useSiteConfig } from '~/composables/useSiteConfig'
@@ -1024,6 +1029,18 @@ const getThemeLabel = (theme) => {
   return themeLocale.value[theme]
 }
 
+// 主题的显示图标（Icon.vue 自绘白名单内的名称）
+const THEME_ICONS = {
+  System: 'monitor',
+  ClassicDark: 'moon',
+  ClassicLight: 'sun',
+  ModernLight: 'sparkles'
+}
+
+const getThemeIcon = (theme) => {
+  return THEME_ICONS[theme] || 'palette'
+}
+
 // 监听用户头像变化，重置错误状态
 watch(
   () => user.value?.avatar,
@@ -1065,6 +1082,11 @@ onUnmounted(() => {
 
 // 标签页状态
 const activeTab = ref('schedule') // 默认显示播出排期
+
+// 手机端导航栏（tabs-row）常驻显示，仅在全屏播放（全屏歌词）时让出屏幕
+// 注意：本文件是纯 JS 的 <script setup>，不要在这里写 TS 泛型调用 ——
+// 泛型语法会被当成比较表达式，运行时报 "boolean is not defined" 并让 SSR 直接 500
+const isFullscreenPlaying = useState('audio-player-fullscreen-lyrics', () => false)
 
 // 各标签页滚动位置独立记忆与恢复
 useScrollMemory(() => activeTab.value)
@@ -1463,8 +1485,10 @@ const updateSongCounts = async (semester = null) => {
 // 并与 og:title 保持一致；加载完成后切换为数据库配置的站点标题
 const pageTitle = computed(() => {
   if (showBootLoading.value) {
-    const bootTitle = isLoaded.value ? siteTitle.value : config.public.siteTitle
-    return bootTitle ? `${locale.value.titleLoading} | ${bootTitle}` : locale.value.titleLoading
+    // 启动加载阶段同样输出真实站点名：这段标题会被外部抓取（搜索引擎 / 分享卡片 /
+    // 浏览器标签页），不能带「加载中」这类瞬时状态词，否则站外看到的站点名是错的。
+    // 优先取数据库配置，未就绪时回退构建期配置
+    return (isLoaded.value ? siteTitle.value : config.public.siteTitle) || siteTitle.value
   }
   return `${locale.value.titleHome} | ${siteTitle.value}`
 })
@@ -1647,13 +1671,8 @@ const handleRequest = async (songData) => {
         await requestFormRef.value.refreshSubmissionStatus()
       }
 
-      // 如果当前在歌曲列表页，自动切换到该页面
-      if (activeTab.value !== 'songs') {
-        setTimeout(() => {
-          handleTabClick('songs')
-        }, 500)
-      }
-
+      // 投稿成功后停留在当前页：连续投稿时不必每次被弹回歌曲列表。
+      // 列表数据已在上方刷新，之后切回列表看到的仍是最新结果。
       return true
     }
     return false
@@ -2210,7 +2229,9 @@ if (
 }
 
 .theme-option {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   padding: 10px 12px;
   border: 0;
   border-radius: 8px;
@@ -2221,6 +2242,15 @@ if (
   transition: all 0.2s;
   width: 100%;
   text-align: left;
+}
+
+.theme-option-icon {
+  flex: none;
+  opacity: 0.7;
+}
+
+.theme-option.is-active .theme-option-icon {
+  opacity: 1;
 }
 
 .theme-option:hover,
@@ -3476,9 +3506,10 @@ if (
     background: var(--overlay-15);
   }
 
-  /* 移动端的主页面里不需要写学校名，保持简约*/
+  /* 竖屏/移动端同样展示站点标题（横屏已有的 head 下放），仅收紧间距避免溢出 */
   .site-title {
-    display: none;
+    margin: 1.5rem 0;
+    padding: 0 1rem;
   }
 
   .school-logo {
@@ -3581,15 +3612,15 @@ if (
   .content-area {
     min-height: auto;
     overflow-x: hidden; /* 防止横向溢出 */
+    overflow-x: clip; /* clip 不生成滚动容器，保证顶部导航 sticky 生效 */
     max-width: 100vw; /* 确保不超过视口宽度*/
     box-sizing: border-box; /* 确保padding计入总宽度*/
   }
 
+  /* 手机端导航：吸附在页面顶部，全程可见 */
   .tabs-row {
-    position: fixed;
-    bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
-    left: 1rem;
-    right: 1rem;
+    position: sticky;
+    top: 0;
     margin: 0 auto;
     max-width: 500px;
     display: flex;
@@ -3597,14 +3628,24 @@ if (
     align-items: stretch; /* 修改为stretch 以配合子元素 height: 100% */
     gap: 0;
     padding: 0 0.5rem;
-    height: 64px;
+    height: 56px;
     background: var(--index-footer-bg);
     backdrop-filter: blur(20px) saturate(180%);
     -webkit-backdrop-filter: blur(20px) saturate(180%);
     border: 1px solid var(--overlay-10);
-    border-radius: 9999px;
-    z-index: 1000;
+    border-top: none;
+    border-radius: 0 0 9999px 9999px;
+    z-index: 1100;
     box-shadow: 0 12px 40px var(--mask-60);
+    transition: transform 0.25s ease, opacity 0.25s ease, visibility 0.25s ease;
+  }
+
+  /* 唯一例外：全屏播放时让出屏幕，避免与全屏播放页叠加 */
+  .tabs-row.is-hidden {
+    transform: translateY(-130%);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
   }
 
   .section-tab {

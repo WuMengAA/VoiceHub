@@ -51,14 +51,19 @@ test('公共 API 只放行已注册的 HTTP 方法', () => {
   assert.equal(isPublicApiPath('/api/auth/login', 'GET'), false)
   assert.equal(isPublicApiPath('/api/site-config', 'GET'), true)
   assert.equal(isPublicApiPath('/api/site-config', 'POST'), false)
-  assert.equal(isPublicApiPath('/api/music/state', 'POST'), true)
+  // 旧版音乐状态通道已收紧：不再匿名可写，避免任何人向全体订阅者伪造「正在播放」
+  assert.equal(isPublicApiPath('/api/music/state', 'POST'), false)
   assert.equal(isPublicApiPath('/api/music/state', 'GET'), false)
+  assert.equal(isPublicApiPath('/api/music/broadcast', 'GET'), true)
+  assert.equal(isPublicApiPath('/api/music/broadcast', 'POST'), false)
+  assert.equal(isPublicApiPath('/api/music/broadcast/authority', 'GET'), false)
 })
 
 test('强制改密门控放行公共 API，但阻止业务写入和 OAuth provider 路由', () => {
   assert.equal(shouldBlockDuringPasswordChange('/api/site-config', 'GET', true), false)
   assert.equal(shouldBlockDuringPasswordChange('/api/sys/time', 'GET', true), false)
-  assert.equal(shouldBlockDuringPasswordChange('/api/music/state', 'POST', true), false)
+  assert.equal(shouldBlockDuringPasswordChange('/api/music/broadcast', 'GET', true), false)
+  assert.equal(shouldBlockDuringPasswordChange('/api/music/state', 'POST', true), true)
   assert.equal(shouldBlockDuringPasswordChange('/api/auth/github', 'GET', true), true)
   assert.equal(shouldBlockDuringPasswordChange('/api/auth/github/callback', 'GET', true), true)
   assert.equal(shouldBlockDuringPasswordChange('/api/admin/users', 'GET', true), true)

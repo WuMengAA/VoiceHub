@@ -278,6 +278,7 @@ export function useLocale() {
     yearReview: withFallback('yearReview'),
     serverErrors: withFallback('serverErrors'),
     theme: withFallback('theme') as unknown as typeof import('./zh-CN').theme,
-    importantNotification: withFallback('importantNotification')
+    importantNotification: withFallback('importantNotification'),
+    installApp: withFallback('installApp')
   }
 }

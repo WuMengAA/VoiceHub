@@ -40,6 +40,17 @@
 - **音乐下载功能**：支持管理员下载歌曲到本地，提供多种音质选择和批量下载
 - **歌曲重播功能**：支持用户对已播放过的歌曲发起重播申请，支持查看申请记录和撤回申请
 
+### 📻 校园广播同步（学生端可同步音乐管理员播放）
+
+- **实时同步「正在播放」**：学生端通过 SSE 实时同步音乐管理员的歌曲与进度，当日固定排期列表上以「正在播放」标识高亮当前曲目，无需刷新
+- **一起听（可选跟随出声）**：学生在页面打开「一起听」后，本地播放器自动跟随广播进度对齐播放，与广播基本同步
+- **开放接口同步**：广播状态同时暴露给开放接口（`/api/open/songs`、`/api/open/schedules`），ClassIsland 组件、CIMS 集控大屏均可读取当前曲目与「接下来播放」
+- **自动连播 + 下一首预告**：基准播控人可将当日排期编排为播放单，一首播完自动切下一首，学生端与开放接口同步显示「接下来播放：xxx」
+- **播控基准权限**：总开关 + 可指定「基准播控人」，指定后仅其能播控；基准人被删/禁用/降权时自动降级回角色基准，避免多管理员互相覆盖
+- **基准人掉线释放 + 一键接管**：基准播控人超过阈值无心跳自动释放锁并广播通知，其他在线管理员可一键接管播控权
+- **在线收听人数**：按 SSE 连接 + 学生端心跳统计「当前 N 人在听」，展示给学生端与开放接口（大屏可直接显示）
+- **播出日志与统计**：每次播出落库（开播/结束时间、播控人、结束原因），后台可查询与导出，满足校园广播审计留痕需求
+
 ### 👥 用户管理
 
 - **用户管理**：管理员添加用户，支持按年级班级分类
@@ -821,6 +832,9 @@ VoiceHub/
 │   │   │   ├── RecentSongsModal.vue   # 最近播放弹窗
 │   │   │   ├── RequestForm.vue        # 点歌表单
 │   │   │   ├── ScheduleList.vue       # 排期列表展示
+│   │   │   ├── BroadcastNowPlaying.vue # 校园广播正在播放条（含一起听开关、收听人数、下一首预告、接管入口与播控入口）
+│   │   │   ├── BroadcastSettingsModal.vue # 播控设置弹窗（总开关 + 自动连播 + 选取基准播控人）
+│   │   │   ├── BroadcastQueueModal.vue # 播放单管理弹窗（按当日排期编排连播队列）
 │   │   │   └── SongList.vue           # 歌曲列表
 │   │   ├── UI/                # 通用UI组件
 │   │   │   ├── AudioPlayer/   # 音频播放器组件模块
@@ -855,7 +869,7 @@ VoiceHub/
 │   │   │   ├── PageTransition.vue     # 页面过渡动画
 │   │   │   ├── ProgressBar.vue        # 进度条组件
 │   │   │   ├── AppLoadingScreen.vue   # 启动加载屏幕组件
-│   │   │   ├── SongComments.vue       # 网易云音乐评论组件
+│   │   │   ├── SongComments.vue       # 网易云与QQ音乐评论组件
 │   │   │   └── WarpCanvas.vue         # 动态画布背景组件
 │   │   ├── year-review/       # 年度回顾组件
 │   │   │   ├── IntroSlide.vue     # 开场页
@@ -872,6 +886,7 @@ VoiceHub/
 │   │   ├── useAudioPlayerControl.ts # 音频播放器控制hooks
 │   │   ├── useAudioPlayerEnhanced.ts # 增强音频播放器hooks
 │   │   ├── useAudioPlayerSync.ts # 音频播放器同步hooks
+│   │   ├── useBroadcastSync.ts  # 校园广播状态同步hooks（订阅/一起听/上报/基准播控权/连播跟随/接管）
 │   │   ├── useAudioQuality.ts  # 音质管理hooks
 │   │   ├── useAudioVisualizer.ts # 音频可视化hooks
 │   │   ├── useAuth.ts          # 认证功能hooks
@@ -993,6 +1008,7 @@ VoiceHub/
 │       ├── oauth.ts           # OAuth工具
 │       ├── autoSchedule.ts    # 自动排期算法
 │       ├── timeUtils.ts       # 时间工具
+│       ├── user-archive.ts    # 账号归档判定与筛选参数解析
 │       ├── webauthn.js        # WebAuthn浏览器兼容工具
 │       └── url.ts             # URL处理工具
 ├── server/                # 服务端代码
@@ -1184,10 +1200,20 @@ VoiceHub/
 │   │   │   ├── bind.post.ts         # 绑定MeoW账号
 │   │   │   └── unbind.post.ts       # 解绑MeoW账号
 │   │   ├── music/          # 音乐相关API
+│   │   │   ├── broadcast/           # 播控与广播 API
+│   │   │   │   ├── authority.get.ts # 读取基准播控人、候选名单与接管提示（歌曲管理员及以上）
+│   │   │   │   ├── authority.post.ts# 修改基准播控人/总开关，或在线接管/释放播控权（管理员及以上）
+│   │   │   │   ├── queue.get.ts     # 读取当前播放单（连播队列）
+│   │   │   │   ├── queue.post.ts    # 保存播放单（播控行为，需命中基准）
+│   │   │   │   └── listeners.post.ts# 学生端收听心跳上报（公开，含防刷）
+│   │   │   ├── broadcast.get.ts     # 读取校园广播正在播放状态（公开，含 nextUp/listeners）
+│   │   │   ├── broadcast.post.ts    # 上报校园广播播放状态（命中播控基准者，含心跳/切歌）
 │   │   │   ├── resolve-url.post.ts # 音乐播放链接统一解析
-│   │   │   ├── state.post.ts        # 音乐状态管理
-│   │   │   └── websocket.ts         # 音乐WebSocket连接
+│   │   │   ├── state.post.ts        # 旧版音乐状态通道（登录 + 播控基准门禁，保留兼容鸿蒙端）
+│   │   │   └── websocket.ts         # 音乐WebSocket连接（SSE，连接即下发广播快照）
 │   │   ├── native-api/     # 原生音乐API
+│   │   │   ├── comment/              # 评论API
+│   │   │   │   └── tx.get.ts         # QQ音乐评论
 │   │   │   ├── lyric/               # 歌词API
 │   │   │   │   ├── mg.get.ts        # 咪咕音乐歌词
 │   │   │   │   └── tx.get.ts        # 腾讯音乐歌词
@@ -1362,6 +1388,7 @@ VoiceHub/
 │   │   ├── oauth-identity.ts # OAuth身份绑定与头像同步工具
 │   │   ├── oauth.ts        # OAuth通用工具
 │   │   ├── permissions.js  # 权限系统配置
+│   │   ├── qqComment.ts    # QQ音乐评论数据归一化
 │   │   ├── qq_music_sdk.ts # QQ音乐SDK调用封装
 │   │   ├── rateLimiter.ts  # 请求速率限制工具
 │   │   ├── register-validation.ts # 注册校验纯函数
@@ -1369,6 +1396,10 @@ VoiceHub/
 │   │   ├── redis.ts        # 可选Redis连接与命名空间工具
 │   │   ├── request-utils.ts # 请求处理通用工具
 │   │   ├── requireSongAdmin.ts # 歌曲管理员权限校验工具
+│   │   ├── broadcast-state.ts # 校园广播正在播放状态（内存权威状态 + 进度外推 + 连播队列 + 自动切歌 + 收听取名）
+│   │   ├── broadcast-authority.ts # 播控基准解析（角色基准 / 基准播控人 / 总开关 + 掉线释放 + 接管）
+│   │   ├── broadcast-listeners.ts # 在线收听人数统计（心跳去重 + 过期清理 + 防刷）
+│   │   ├── broadcast-logs.ts # 播出日志落库（开播/结束/切歌写入 BroadcastPlayLog，构设幂等）
 │   │   ├── song-duration-policy.ts # 歌曲时长归一化与补齐/清空决策
 │   │   ├── song-name-normalize.ts # 歌曲名称标准化匹配工具
 │   │   ├── song-type-resolver.ts # 歌曲类型（语种/曲风）解析工具
@@ -1388,6 +1419,7 @@ VoiceHub/
 │   │   ├── theme-config.ts # 主题配置校验与解析工具
 │   │   ├── telemetry.ts    # 遥测与错误追踪工具
 │   │   ├── user.ts         # 用户相关工具函数
+│   │   ├── user-archive.ts # 账号归档判定转发导出（权威实现在 app/utils）
 │   │   ├── user-avatar.ts  # OAuth 头像来源解析工具
 │   │   ├── webauthn-config.ts # WebAuthn配置工具
 │   │   └── webauthn-token.ts # WebAuthn令牌工具
@@ -1409,15 +1441,18 @@ VoiceHub/
 ├── tests/                 # 自动化测试
 │   └── server/             # 服务端策略与安全测试
 │       ├── auth-route-policy.test.ts # 强制改密路由策略测试
+│       ├── broadcast-state.test.ts # 校园广播状态与进度外推测试
 │       ├── cors-origin-policy.test.ts # CORS 来源协议匹配测试
 │       ├── important-notification-policy.test.ts # 重要通知策略测试
 │       ├── initial-password-policy.test.ts # 初始密码状态策略测试
 │       ├── notification-history-policy.test.ts # 通知批次引用、筛选与分页策略测试
 │       ├── oauth-state-cookie.test.ts # OAuth state Cookie 安全测试
 │       ├── password-policy.test.ts # 密码策略测试
+│       ├── qq-comment-normalize.test.ts # QQ音乐评论归一化测试
 │       ├── song-duration-policy.test.ts # 歌曲时长归一化与补齐决策测试
 │       ├── submission-restriction-policy.test.ts # 重复投稿限制模式判定测试
 │       ├── token-version-policy.test.ts # 令牌版本策略测试
+│       ├── user-archive.test.ts # 账号归档筛选参数解析测试
 │       └── user-avatar.test.ts # OAuth 头像来源解析测试
 ├── types/                 # TypeScript类型定义
 │   ├── global.d.ts         # 全局类型定义

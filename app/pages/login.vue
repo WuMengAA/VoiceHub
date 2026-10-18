@@ -13,7 +13,7 @@
               class="school-logo"
             />
           </div>
-          <h1 class="form-title">{{ siteTitle ? siteTitle + ' | VoiceHub' : 'VoiceHub' }}</h1>
+          <h1 class="form-title">{{ siteTitle || '星璃校园广播' }}</h1>
           <div class="header-divider" />
         </div>
         <ClientOnly>

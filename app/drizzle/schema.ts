@@ -340,7 +340,59 @@ export const systemSettings = pgTable('SystemSettings', {
   // 平台管理配置
   enabledPlatforms: text('enabledPlatforms').default('["netease","tencent","bilibili","migu"]'),
   platformOrder: text('platformOrder').default('["netease","tencent","bilibili","migu"]'),
+
+  // 播控（学生端同步音乐管理员播放状态）配置
+  // broadcastEnabled: 总开关。关闭后任何人都不能对外播控，学生端也不显示「正在播放」
+  // broadcastBaselineUserId: 基准播控人（必须是歌曲管理员及以上）。
+  //   为空 → 基准为「歌曲管理员」角色，任意歌曲管理员及以上均可播控；
+  //   有值 → 仅该用户可播控（其失效/降权时自动降级回角色基准）
+  broadcastEnabled: boolean('broadcastEnabled').default(true).notNull(),
+  broadcastBaselineUserId: integer('broadcastBaselineUserId'),
+  // broadcastAutoAdvance: 自动连播。开启后播放单里的曲目播完会自动切到下一首
+  broadcastAutoAdvance: boolean('broadcastAutoAdvance').default(false).notNull(),
+  // broadcastIdleReleaseSec: 基准播控人无心跳多久后自动释放基准锁（秒）。
+  //   0 表示不自动释放，只能人工接管。用于「基准人跑了、广播又已停」时解锁播控权
+  broadcastIdleReleaseSec: integer('broadcastIdleReleaseSec').default(180).notNull(),
+  // broadcastListenersEnabled: 是否统计并对外下发「当前收听人数」
+  broadcastListenersEnabled: boolean('broadcastListenersEnabled').default(true).notNull(),
 });
+
+// 播出日志表：记录每一首歌实际对外播出的时间与播控人，供后台审计与统计
+export const broadcastPlayLogs = pgTable('BroadcastPlayLog', {
+  id: serial('id').primaryKey(),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+  updatedAt: timestamp('updatedAt').defaultNow().notNull(),
+  songId: integer('songId').notNull(),
+  // 歌曲信息快照：歌曲被删除后日志依然可读
+  songTitle: text('songTitle'),
+  songArtist: text('songArtist'),
+  cover: text('cover'),
+  scheduleId: integer('scheduleId'),
+  sequence: integer('sequence'),
+  playDate: varchar('playDate', { length: 10 }),
+  broadcasterId: integer('broadcasterId'),
+  broadcasterName: text('broadcasterName'),
+  startedAt: timestamp('startedAt').defaultNow().notNull(),
+  endedAt: timestamp('endedAt'),
+  /** 本次实际播出的有效秒数（暂停不计） */
+  playedSeconds: integer('playedSeconds').default(0).notNull(),
+  /** 收听人数峰值（统计开启时才有值） */
+  listenerPeak: integer('listenerPeak').default(0).notNull(),
+  /**
+   * 结束原因：
+   * STOPPED 播控端主动结束 / SWITCHED 切换下一首 / AUTO_ADVANCED 连播自动切下一首
+   * EXPIRED 播控端失联超时 / DISABLED 总开关关闭 / TAKEOVER 播控权被接管开
+   */
+  endReason: varchar('endReason', { length: 24 }),
+}, (table) => [
+  index('broadcast_log_started_at_idx').on(table.startedAt),
+  index('broadcast_log_song_idx').on(table.songId, table.startedAt),
+  index('broadcast_log_broadcaster_idx').on(table.broadcasterId, table.startedAt),
+  index('broadcast_log_schedule_idx').on(table.scheduleId)
+]);
+
+export type BroadcastPlayLog = typeof broadcastPlayLogs.$inferSelect;
+export type NewBroadcastPlayLog = typeof broadcastPlayLogs.$inferInsert;
 
 // 歌曲黑名单表
 export const songBlacklists = pgTable('SongBlacklist', {
@@ -590,6 +642,21 @@ export const notificationSettingsRelations = relations(notificationSettings, ({ 
 export const playTimesRelations = relations(playTimes, ({ many }) => ({
   songs: many(songs),
   schedules: many(schedules),
+}));
+
+export const broadcastPlayLogsRelations = relations(broadcastPlayLogs, ({ one }) => ({
+  broadcaster: one(users, {
+    fields: [broadcastPlayLogs.broadcasterId],
+    references: [users.id],
+  }),
+  song: one(songs, {
+    fields: [broadcastPlayLogs.songId],
+    references: [songs.id],
+  }),
+  schedule: one(schedules, {
+    fields: [broadcastPlayLogs.scheduleId],
+    references: [schedules.id],
+  }),
 }));
 
 // API框架关系定义

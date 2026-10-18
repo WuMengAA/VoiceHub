@@ -250,9 +250,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import AppleMusicLyrics from './AppleMusicLyrics.vue'
-import LyricsModal from './LyricsModal.vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+// 歌词引擎（~326KB）与全屏歌词模态按需加载，避免首屏拉大包拖慢移动端
+const AppleMusicLyrics = defineAsyncComponent(() => import('./AppleMusicLyrics.vue'))
+const LyricsModal = defineAsyncComponent(() => import('./LyricsModal.vue'))
 import AudioElement from './AudioPlayer/AudioElement.vue'
 import VolumeControl from './AudioPlayer/VolumeControl.vue'
 import BilibiliIframeModal from './BilibiliIframeModal.vue'
@@ -264,6 +265,7 @@ import { useAudioPlayerControl } from '~/composables/useAudioPlayerControl'
 import { useAudioPlayerSync } from '~/composables/useAudioPlayerSync'
 import { useAudioQuality } from '~/composables/useAudioQuality'
 import { useAudioPlayerEnhanced } from '~/composables/useAudioPlayerEnhanced'
+import { useBroadcastSync } from '~/composables/useBroadcastSync'
 import { useMediaSession } from '~/composables/useMediaSession'
 import { getBilibiliUrl } from '~/utils/url'
 import { scrobbleSong } from '~/utils/neteaseApi'
@@ -306,8 +308,28 @@ const emit = defineEmits(['close', 'ended', 'error', 'songChange'])
 // 使用 composables
 const control = useAudioPlayerControl()
 const sync = useAudioPlayerSync()
+const broadcast = useBroadcastSync()
 const { getQualityLabel, getQuality, getQualityOptions, saveQuality } = useAudioQuality()
 const enhanced = useAudioPlayerEnhanced()
+
+// 播控端：把本机播放状态上报为校园广播，学生端据此同步歌曲与进度
+const publishBroadcast = (options: { immediate?: boolean } = {}) => {
+  if (!broadcast.canPublish.value || !props.song?.id) return
+  broadcast.publish(
+    {
+      songId: props.song.id,
+      title: props.song.title,
+      artist: props.song.artist,
+      cover: props.song.cover || null,
+      musicPlatform: props.song.musicPlatform || null,
+      musicId: props.song.musicId || null,
+      duration: control.duration.value || 0,
+      position: control.currentTime.value || 0,
+      isPlaying: control.isPlaying.value
+    },
+    options
+  )
+}
 const mediaSession = useMediaSession()
 
 // 组件引用
@@ -319,6 +341,15 @@ const isClosing = ref(false)
 const isClosed = ref(false)
 const showLyrics = ref(false)
 const showFullscreenLyrics = ref(false)
+
+// 全局共享：首页据此在手机端隐藏/恢复顶部导航栏（全屏播放时让出屏幕）
+const fullscreenLyricsActive = useState<boolean>('audio-player-fullscreen-lyrics', () => false)
+watch(showFullscreenLyrics, (visible) => {
+  fullscreenLyricsActive.value = visible
+})
+onUnmounted(() => {
+  fullscreenLyricsActive.value = false
+})
 const showQualitySettings = ref(false)
 const coverError = ref(false)
 const useAppleMusicStyle = ref(true) // 默认使用Apple Music风格
@@ -337,11 +368,13 @@ const fallbackOpenDialogMessage = ref('播放地址不可直接播放，是否�
 const isFallbackHandling = ref(false) // 标记正在处理 fallback，阻止重试逻辑
 const consecutiveSkipCount = ref(0) // 连续跳过失败的歌曲数
 const MAX_CONSECUTIVE_SKIP = 3 // 最大连续跳过次数
+const MAX_SOURCE_SWITCH = 3 // 单首歌曲音源切换上限，避免无限循环
 const MIN_VALID_QQ_AUDIO_DURATION = 10
 const NETEASE_SCROBBLE_MIN_SECONDS = 30
 const NETEASE_SCROBBLE_SHORT_AUDIO_RATIO = 0.8
 const MAX_NETEASE_SCROBBLE_RETRIES = 3
 const failedPlaybackSources = ref<string[]>([])
+const lastObservedTime = ref(0) // 上一次 timeupdate 的进度，用于识别进度跳变
 const neteaseScrobbleReportedKey = ref<string | null>(null)
 const neteaseScrobblePendingKey = ref<string | null>(null)
 const neteaseScrobbleRetryCount = ref(0)
@@ -533,6 +566,12 @@ const trySwitchPlaybackSource = async () => {
     return false
   }
 
+  // 控件层正在做音源故障转移（加载期），这里避让，避免两套逻辑同时 reload 造成竞态
+  if (control.isFailingOver.value) return false
+
+  // 单首歌曲切换次数达到上限后不再自动切换，交由用户处理
+  if (failedPlaybackSources.value.length >= MAX_SOURCE_SWITCH) return false
+
   const failedSource = getCurrentFailedSource()
   const excludeSources = [...failedPlaybackSources.value]
 
@@ -546,6 +585,43 @@ const trySwitchPlaybackSource = async () => {
   }
 
   if (!excludeSources.length) {
+    // 未知失效源（缓存未记录且非 QQ 音乐）：做一次全新解析，若得到不同链接则用之。
+    // 仍是同一链接说明无可用替代源，返回 false 交给控件层最终兜底。
+    isFallbackHandling.value = true
+    control.isLoadingTrack.value = true
+    try {
+      const probe = await getMusicUrlResult(
+        song.musicPlatform,
+        song.musicId,
+        song.playUrl,
+        buildFallbackResolveOptions(song, [])
+      )
+      const currentSrc = audioPlayer.value?.currentSrc || audioPlayer.value?.src || ''
+      if (probe?.url && probe.url !== currentSrc) {
+        failedPlaybackSources.value = [...excludeSources, 'unknown']
+        const updatedSong = {
+          ...song,
+          musicUrl: probe.url,
+          sourceInfo: { ...(song.sourceInfo || {}), playSource: probe.source }
+        }
+        sync.globalAudioPlayer.playSong(updatedSong)
+        emit('songChange', updatedSong)
+        if (window.$showNotification) {
+          window.$showNotification(audioPlayerLocale.value.fallbackSource, 'warning')
+        }
+        await nextTick()
+        if (audioPlayer.value) {
+          audioPlayer.value.load()
+          await control.play()
+        }
+        return true
+      }
+    } catch {
+      // 忽略，交给控件层最终兜底
+    } finally {
+      isFallbackHandling.value = false
+      control.isLoadingTrack.value = false
+    }
     return false
   }
 
@@ -737,6 +813,13 @@ const handleTimeUpdate = () => {
   const currentTime = audioPlayer.value.currentTime
   const duration = audioPlayer.value.duration
 
+  // 进度跳变说明发生了跳转（点击进度条、拖动、歌词跳转），需要立即上报给广播订阅者
+  const timeJump = Math.abs(currentTime - lastObservedTime.value)
+  lastObservedTime.value = currentTime
+  if (timeJump > 3) {
+    publishBroadcast({ immediate: true })
+  }
+
   control.onTimeUpdate(currentTime)
 
   // 更新 Media Session 位置状态
@@ -749,6 +832,8 @@ const handleTimeUpdate = () => {
   if (control.isPlaying.value) {
     sync.throttledProgressUpdate(currentTime, duration, control.isPlaying.value)
     void tryScrobbleNeteaseSong(currentTime, duration)
+    // 广播跟随靠「上报锚点 + 本地时钟外推」，进度按节流间隔上报即可
+    publishBroadcast()
   }
 }
 
@@ -785,6 +870,8 @@ const handlePlay = () => {
     volume: 1,
     playlistIndex: sync.globalAudioPlayer.getCurrentPlaylistIndex().value
   })
+
+  publishBroadcast({ immediate: true })
 }
 
 const handlePause = () => {
@@ -819,6 +906,8 @@ const handlePause = () => {
     volume: 1,
     playlistIndex: sync.globalAudioPlayer.getCurrentPlaylistIndex().value
   })
+
+  publishBroadcast({ immediate: true })
 }
 
 const handleDurationChange = async () => {
@@ -834,6 +923,33 @@ const handleDurationChange = async () => {
     if (switchedSource) return
   }
 }
+
+// 应用外部请求的定位（广播跟随在切歌后要求跳到对应进度）
+const applyPendingSeek = async () => {
+  if (!audioPlayer.value) return
+  if (sync.globalAudioPlayer.getPendingSeek().value === null) return
+  // 音频尚未就绪时保持请求挂起，交由 loadedmetadata 流程处理
+  if (audioPlayer.value.readyState < 1) return
+
+  const target = sync.globalAudioPlayer.consumePendingSeek()
+  if (target === null) return
+
+  try {
+    await control.seek(target)
+    if (!control.isPlaying.value) {
+      await control.play()
+    }
+  } catch (error) {
+    console.error('应用广播定位失败:', error)
+  }
+}
+
+watch(
+  () => sync.globalAudioPlayer.getPendingSeek().value,
+  (pending) => {
+    if (pending !== null) void applyPendingSeek()
+  }
+)
 
 const handleLoaded = async () => {
   if (!audioPlayer.value) return
@@ -852,6 +968,9 @@ const handleLoaded = async () => {
   }
 
   control.onLoaded(audioPlayer.value.duration)
+
+  // 广播跟随：切歌完成后落到目标进度
+  void applyPendingSeek()
 
   // 更新 Media Session 元数据
   if (mediaSession.isSupported.value && props.song) {
@@ -948,6 +1067,9 @@ const handleError = async (error) => {
 
   // 如果正在处理 fallback，直接返回，不走重试逻辑
   if (isFallbackHandling.value) return
+
+  // 控件层正在做音源故障转移（加载期换源），这里避让，避免两套逻辑同时 reload
+  if (control.isFailingOver.value) return
 
   const switchedSource = await trySwitchPlaybackSource()
   if (switchedSource) {
@@ -1067,6 +1189,8 @@ const handleEnded = () => {
 
   if (isOffMode || isOrderFinished) {
     showFullscreenLyrics.value = false
+    // 本曲播完且不再续播，清空广播状态，避免学生端停留在「已暂停」
+    void broadcast.clearBroadcast()
   }
   emit('ended')
 }
@@ -1136,6 +1260,9 @@ const handleStartDrag = (event) => {
     return
   }
 
+  // 播控模式下禁止拖动进度条：避免误操作把全站听众的播放进度带偏（参见 useBroadcastSync 跟随对齐逻辑）
+  if (broadcast.publishEnabled.value) return
+
   // 获取进度条元素引用
   const progressBarElement = event.currentTarget
   if (!progressBarElement) {
@@ -1151,6 +1278,9 @@ const handleStartTouchDrag = (event) => {
     console.error('[AudioPlayer] 音频播放器引用验证失败，无法开始触摸拖拽')
     return
   }
+
+  // 播控模式下禁止拖动进度条：避免误操作把全站听众的播放进度带偏
+  if (broadcast.publishEnabled.value) return
 
   // 获取进度条元素引用
   const progressBarElement = event.currentTarget

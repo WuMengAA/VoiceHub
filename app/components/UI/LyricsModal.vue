@@ -10,7 +10,7 @@
       >
         <div
           ref="fullscreenContainer"
-          :class="{ leaving: isExiting }"
+          :class="{ leaving: isExiting, 'sonic-mode': visualizerTheme === 'sonic' }"
           class="lyrics-fullscreen-container"
         >
           <!-- 动态背景 -->
@@ -26,6 +26,16 @@
               :class="{ visible: showBackgroundFallback }"
               :style="{ backgroundImage: `url(${currentCoverUrl})` }"
               class="cover-background"
+            />
+            <!-- 体素可视化主题（音域回响 Sonic Topography）背景层 -->
+            <iframe
+              v-if="sonicEverEnabled"
+              v-show="visualizerTheme === 'sonic'"
+              ref="sonicIframe"
+              class="sonic-visualizer-iframe"
+              src="/visualizer/sonic-topography/index.html"
+              title="Sonic Topography"
+              @load="handleSonicIframeLoad"
             />
             <!-- 叠加暗化层，提升白色背景下歌词对比度 -->
             <div class="background-overlay" />
@@ -165,7 +175,7 @@
                   @click="activePanel = 'comments'"
                 >
                   <Icon name="message-circle" size="16" />
-                  <span>{{ locale.comments }}</span>
+                  <span>{{ locale.comments }} ({{ formatCompactCommentCount(commentsCount) }})</span>
                 </button>
               </div>
 
@@ -178,12 +188,13 @@
                 </div>
               </div>
 
-              <SongComments
-                v-show="activePanel === 'comments'"
-                class="comments-display-area"
-                :song="currentSong"
-                :visible="isVisible && activePanel === 'comments'"
-              />
+              <div v-show="activePanel === 'comments'" class="comments-display-area">
+                <SongComments
+                  ref="commentsRef"
+                  :song="currentSong"
+                  :visible="isVisible"
+                />
+              </div>
 
               <!-- 歌词设置工具栏 -->
               <div v-if="activePanel === 'lyrics'" class="lyric-toolbar">
@@ -227,6 +238,42 @@
                         <span class="label">{{ locale.showYrc }}</span>
                         <input v-model="lyricSettings.showYrc.value" type="checkbox" />
                       </div>
+                      <template v-if="lyricSettings.useAMLyrics.value">
+                        <div class="setting-divider" />
+                        <div class="setting-item switch">
+                          <span class="label">{{ locale.amllNormalizeSpaces }}</span>
+                          <input
+                            v-model="lyricSettings.amllNormalizeSpaces.value"
+                            type="checkbox"
+                          />
+                        </div>
+                        <div class="setting-item switch">
+                          <span class="label">{{ locale.amllResetLineTimestamps }}</span>
+                          <input
+                            v-model="lyricSettings.amllResetLineTimestamps.value"
+                            type="checkbox"
+                          />
+                        </div>
+                        <div class="setting-item switch">
+                          <span class="label">{{ locale.amllConvertBgLines }}</span>
+                          <input v-model="lyricSettings.amllConvertBgLines.value" type="checkbox" />
+                        </div>
+                        <div class="setting-item switch">
+                          <span class="label">{{ locale.amllSyncBgLines }}</span>
+                          <input v-model="lyricSettings.amllSyncBgLines.value" type="checkbox" />
+                        </div>
+                        <div class="setting-item switch">
+                          <span class="label">{{ locale.amllCleanOverlaps }}</span>
+                          <input v-model="lyricSettings.amllCleanOverlaps.value" type="checkbox" />
+                        </div>
+                        <div class="setting-item switch">
+                          <span class="label">{{ locale.amllTryAdvanceStart }}</span>
+                          <input
+                            v-model="lyricSettings.amllTryAdvanceStart.value"
+                            type="checkbox"
+                          />
+                        </div>
+                      </template>
                     </div>
                   </template>
                 </Popover>
@@ -279,6 +326,20 @@
               </div>
 
               <div class="right-control">
+                <button
+                  class="control-btn viz-theme-btn"
+                  :class="{ active: visualizerTheme === 'sonic' }"
+                  :aria-label="isSonicActive ? '音域回响' : '渐变背景'"
+                  :title="isSonicActive ? '音域回响（Sonic Topography）· 点击切换为渐变背景' : '渐变背景 · 点击切换为音域回响'"
+                  @click="toggleVisualizerTheme"
+                >
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="4" y1="10" x2="4" y2="14" />
+                    <line x1="9" y1="6" x2="9" y2="18" />
+                    <line x1="14" y1="3" x2="14" y2="21" />
+                    <line x1="19" y1="8" x2="19" y2="16" />
+                  </svg>
+                </button>
                 <VolumeControl />
               </div>
             </div>
@@ -307,7 +368,7 @@
   </Teleport>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, nextTick, onUnmounted, ref, watch, onMounted } from 'vue'
 import { useAudioPlayer } from '~/composables/useAudioPlayer'
 import { useAudioPlayerControl } from '~/composables/useAudioPlayerControl'
@@ -346,6 +407,18 @@ const locale = computed(() => ui.value?.lyricsModal || {})
 const backgroundRenderer = useBackgroundRenderer()
 const audioVisualizer = useAudioVisualizer()
 
+// 体素可视化主题（音域回响 Sonic Topography）：全屏播放的第二个主题
+const visualizerTheme = ref<'gradient' | 'sonic'>(
+  (typeof localStorage !== 'undefined' && localStorage.getItem('vh-visualizer-theme') === 'sonic') ? 'sonic' : 'gradient'
+)
+const sonicIframe = ref<HTMLIFrameElement | null>(null)
+const sonicRafId = ref<number | null>(null)
+// 一旦启用过体素主题就保留 iframe（用 v-show 隐藏而非销毁），避免来回切换时重载三维场景
+const sonicEverEnabled = ref(visualizerTheme.value === 'sonic')
+const sonicReady = ref(false)
+// 「音域回响」主题开关的当前状态，供按钮显示名称与激活样式使用
+const isSonicActive = computed(() => visualizerTheme.value === 'sonic')
+
 // 响应式状态
 const showQualitySettings = ref(false)
 const progressBar = ref(null)
@@ -363,6 +436,16 @@ const hasPushedHistory = ref(false)
 const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 375)
 const windowHeight = ref(typeof window !== 'undefined' ? window.innerHeight : 812)
 const activePanel = ref('lyrics')
+const commentsRef = ref(null)
+const commentsCount = computed(() => Number(commentsRef.value?.totalCount || 0))
+const commentCountUnit = computed(() => ui.value?.songComments?.tenThousand || '万')
+
+const formatCompactCommentCount = (count) => {
+  const value = Number(count) || 0
+  if (value < 10000) return String(value)
+  const compact = (value / 10000).toFixed(value >= 100000 ? 0 : 1).replace(/\.0$/, '')
+  return `${compact}${commentCountUnit.value}`
+}
 
 // 拖拽状态管理
 const isDragging = ref(false)
@@ -400,8 +483,8 @@ const currentLyricLine = computed(() => {
 
 const canShowComments = computed(() => {
   const song = currentSong.value
-  if (!song || song.musicPlatform !== 'netease') return false
-  return /^\d+$/.test(String(song.musicId || '').trim())
+  if (!song || !['netease', 'tencent'].includes(song.musicPlatform)) return false
+  return /^\d+$/.test(String(song.musicId || '').trim()) || song.musicPlatform === 'tencent'
 })
 
 const currentQualityText = computed(() => {
@@ -994,6 +1077,7 @@ watch(
   () => props.isVisible,
   async (visible) => {
     if (visible) {
+      activePanel.value = 'lyrics'
       disablePageScroll()
 
       await nextTick()
@@ -1149,6 +1233,106 @@ const drawSpectrum = () => {
   }
 }
 
+// ===== 体素可视化主题（音域回响 Sonic Topography）桥接 =====
+// Wallpaper Engine 的音频回调期望 128 个 0~1 的频道值；
+// 宿主把播放器 AnalyserNode 的 FFT 归一化后，经 postMessage 喂给 iframe 内注入的 mock 接口
+const SONIC_FFT_BINS = 128
+
+const postSonicMedia = () => {
+  const win = sonicIframe.value?.contentWindow
+  if (!win) return
+  const song = currentSong.value
+  win.postMessage(
+    {
+      type: 'vh-media',
+      title: song?.title || '',
+      artist: song?.artist || '',
+      cover: currentCoverUrl.value || '',
+      isPlaying: isPlaying.value
+    },
+    '*'
+  )
+}
+
+const pushSonicFrame = () => {
+  const win = sonicIframe.value?.contentWindow
+  if (!win) return
+
+  const bins = new Array(SONIC_FFT_BINS)
+  let raw: Uint8Array | null = null
+  if (audioVisualizer.isInitialized.value) {
+    try {
+      raw = audioVisualizer.getFrequencyData()
+    } catch (e) {
+      raw = null
+    }
+  }
+
+  if (raw && raw.length > 0) {
+    const ratio = raw.length / SONIC_FFT_BINS
+    for (let i = 0; i < SONIC_FFT_BINS; i++) {
+      const idx = Math.min(raw.length - 1, Math.floor(i * ratio))
+      bins[i] = (raw[idx] || 0) / 255
+    }
+  } else {
+    // 无可用 FFT（如不支持 CORS 的音源）：退化为静息呼吸，避免画面彻底死掉
+    const t = (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000
+    for (let i = 0; i < SONIC_FFT_BINS; i++) {
+      bins[i] = 0.05 + 0.04 * Math.sin(t * 1.1 + i * 0.22)
+    }
+  }
+
+  win.postMessage({ type: 'vh-audio', data: bins }, '*')
+}
+
+const stopSonicBridge = () => {
+  if (sonicRafId.value !== null) {
+    cancelAnimationFrame(sonicRafId.value)
+    sonicRafId.value = null
+  }
+}
+
+const startSonicBridge = () => {
+  stopSonicBridge()
+  if (typeof window === 'undefined' || !sonicReady.value) return
+  let lastMediaAt = 0
+  const tick = (now: number) => {
+    sonicRafId.value = requestAnimationFrame(tick)
+    pushSonicFrame()
+    if (now - lastMediaAt > 500) {
+      lastMediaAt = now
+      postSonicMedia()
+    }
+  }
+  sonicRafId.value = requestAnimationFrame(tick)
+}
+
+const handleSonicIframeLoad = () => {
+  sonicReady.value = true
+  postSonicMedia()
+  if (props.isVisible && visualizerTheme.value === 'sonic') {
+    startSonicBridge()
+  }
+}
+
+const toggleVisualizerTheme = () => {
+  visualizerTheme.value = visualizerTheme.value === 'sonic' ? 'gradient' : 'sonic'
+}
+
+watch(visualizerTheme, (theme) => {
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('vh-visualizer-theme', theme)
+  }
+  if (theme === 'sonic') {
+    sonicEverEnabled.value = true
+    nextTick(() => {
+      if (props.isVisible && sonicReady.value) startSonicBridge()
+    })
+  } else {
+    stopSonicBridge()
+  }
+})
+
 watch(
   () => props.isVisible,
   async (visible) => {
@@ -1173,7 +1357,13 @@ watch(
       }
 
       startAnimationLoop()
+
+      // 体素主题：模态可见时启动 FFT 桥接
+      if (visualizerTheme.value === 'sonic') {
+        startSonicBridge()
+      }
     } else {
+      stopSonicBridge()
       if (hasPushedHistory.value) {
         history.back()
         hasPushedHistory.value = false
@@ -1184,6 +1374,7 @@ watch(
 )
 
 onUnmounted(() => {
+  stopSonicBridge()
   stopProgressTimer()
   document.removeEventListener('keydown', handleKeydown)
   document.removeEventListener('mousemove', handleProgressMouseMove)
@@ -1304,7 +1495,24 @@ onUnmounted(() => {
   position: absolute;
   inset: 0;
   background: radial-gradient(circle at center, var(--mask-10) 0%, var(--mask-50) 100%);
+  z-index: 3;
+}
+
+/* 体素可视化主题（音域回响 Sonic Topography）：全屏播放第二个主题的背景层 */
+.sonic-visualizer-iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
   z-index: 1;
+  pointer-events: none;
+  background: #05070d;
+}
+
+/* 体素主题下减弱暗化层，避免三维画面被压得过暗看不清 */
+.lyrics-fullscreen-container.sonic-mode .background-overlay {
+  opacity: 0.3;
 }
 
 /* 关闭按钮 */
@@ -1554,8 +1762,10 @@ onUnmounted(() => {
 }
 
 .comments-display-area {
+  width: 100%;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
 }
 
 .comment-current-lyric {
@@ -1720,6 +1930,16 @@ onUnmounted(() => {
   transform: none;
 }
 
+/* 「音域回响」主题开关：激活时高亮，未激活时弱化 */
+.viz-theme-btn {
+  opacity: 0.65;
+}
+
+.viz-theme-btn.active {
+  opacity: 1;
+  filter: drop-shadow(0 0 6px var(--lyrics-modal-text-secondary));
+}
+
 .secondary-btn {
   opacity: 0.6;
   transition: all 0.2s;
@@ -1825,6 +2045,11 @@ onUnmounted(() => {
   width: 16px;
   height: 16px;
   accent-color: var(--color-error);
+}
+
+.setting-divider {
+  height: 1px;
+  background: var(--overlay-20);
 }
 
 /* 音质菜单动画 */

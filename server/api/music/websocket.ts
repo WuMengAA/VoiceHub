@@ -2,11 +2,34 @@ import { defineEventHandler, getQuery } from 'h3'
 import { db, users } from '~/drizzle/db'
 import { eq } from 'drizzle-orm'
 import { JWTEnhanced } from '~~/server/utils/jwt-enhanced'
-import { resolveRequirePasswordChange } from '~~/server/utils/system-settings-helper'
+import {
+  getSystemSettingsCached,
+  resolveRequirePasswordChange
+} from '~~/server/utils/system-settings-helper'
 import { createApiError } from '~~/server/utils/apiError'
+import {
+  getBroadcastSnapshot,
+  syncBroadcastSession,
+  type BroadcastSnapshot
+} from '~~/server/utils/broadcast-state'
+import { removeListener, touchListener } from '~~/server/utils/broadcast-listeners'
 
 // 存储WebSocket连接
 const musicConnections = new Map<string, any>()
+
+// 自动连播开关的短缓存：心跳每 30 秒触发一次自检，没必要每次都去查库
+const AUTO_ADVANCE_CACHE_MS = 10_000
+let autoAdvanceCache: { at: number; value: boolean } | null = null
+
+async function resolveAutoAdvance(): Promise<boolean> {
+  if (autoAdvanceCache && Date.now() - autoAdvanceCache.at < AUTO_ADVANCE_CACHE_MS) {
+    return autoAdvanceCache.value
+  }
+  const settings = await getSystemSettingsCached()
+  const value = settings?.broadcastAutoAdvance === true
+  autoAdvanceCache = { at: Date.now(), value }
+  return value
+}
 
 // 音乐状态接口
 interface MusicState {
@@ -19,13 +42,9 @@ interface MusicState {
   timestamp: number
 }
 
-// 广播音乐状态到所有连接的客户端（改进错误处理）
-export function broadcastMusicState(state: MusicState) {
-  const message = JSON.stringify({
-    type: 'music_state_update',
-    data: state
-  })
-
+// 向所有连接推送一条 SSE 消息，并顺带清理已断开的连接
+function pushToConnections(payload: object, label: string) {
+  const message = JSON.stringify(payload)
   const deadConnections: string[] = []
 
   musicConnections.forEach((connection, id) => {
@@ -40,7 +59,7 @@ export function broadcastMusicState(state: MusicState) {
     } catch (error) {
       // 忽略常见的连接错误，避免日志污染
       if (error.code !== 'ECONNRESET' && error.code !== 'EPIPE' && error.code !== 'ENOTFOUND') {
-        console.error(`Failed to send music state to connection ${id}:`, error.message)
+        console.error(`Failed to send ${label} to connection ${id}:`, error.message)
       }
       deadConnections.push(id)
     }
@@ -50,60 +69,24 @@ export function broadcastMusicState(state: MusicState) {
   deadConnections.forEach((id) => musicConnections.delete(id))
 }
 
-// 发送播放列表更新（改进错误处理）
-export function broadcastPlaylistUpdate(playlist: any[]) {
-  const message = JSON.stringify({
-    type: 'playlist_update',
-    data: { playlist }
-  })
-
-  const deadConnections: string[] = []
-
-  musicConnections.forEach((connection, id) => {
-    try {
-      if (connection.destroyed || connection.writableEnded) {
-        deadConnections.push(id)
-        return
-      }
-
-      connection.write(`data: ${message}\n\n`)
-    } catch (error) {
-      if (error.code !== 'ECONNRESET' && error.code !== 'EPIPE' && error.code !== 'ENOTFOUND') {
-        console.error(`Failed to send playlist update to connection ${id}:`, error.message)
-      }
-      deadConnections.push(id)
-    }
-  })
-
-  deadConnections.forEach((id) => musicConnections.delete(id))
+// 广播音乐状态到所有连接的客户端
+export function broadcastMusicState(state: MusicState) {
+  pushToConnections({ type: 'music_state_update', data: state }, 'music state')
 }
 
-// 发送歌曲切换通知（改进错误处理）
+// 发送播放列表更新
+export function broadcastPlaylistUpdate(playlist: any[]) {
+  pushToConnections({ type: 'playlist_update', data: { playlist } }, 'playlist update')
+}
+
+// 发送歌曲切换通知
 export function broadcastSongChange(songInfo: any) {
-  const message = JSON.stringify({
-    type: 'song_change',
-    data: songInfo
-  })
+  pushToConnections({ type: 'song_change', data: songInfo }, 'song change')
+}
 
-  const deadConnections: string[] = []
-
-  musicConnections.forEach((connection, id) => {
-    try {
-      if (connection.destroyed || connection.writableEnded) {
-        deadConnections.push(id)
-        return
-      }
-
-      connection.write(`data: ${message}\n\n`)
-    } catch (error) {
-      if (error.code !== 'ECONNRESET' && error.code !== 'EPIPE' && error.code !== 'ENOTFOUND') {
-        console.error(`Failed to send song change to connection ${id}:`, error.message)
-      }
-      deadConnections.push(id)
-    }
-  })
-
-  deadConnections.forEach((id) => musicConnections.delete(id))
+// 广播校园广播「正在播放」状态；snapshot 为 null 表示广播已结束
+export function broadcastBroadcastState(snapshot: BroadcastSnapshot | null) {
+  pushToConnections({ type: 'broadcast_state', data: snapshot }, 'broadcast state')
 }
 
 // WebSocket事件处理器
@@ -153,6 +136,15 @@ export default defineEventHandler(async (event) => {
   // 生成连接ID
   const connectionId = `music_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
 
+  // 收听者标识：登录用户按 userId 归并，匿名按连接 ID 归并，
+  // 客户端心跳（/api/music/broadcast/listeners）带上它就能复用同一条登记
+  const listenerKey = userId !== null ? `user:${userId}` : `anon:${connectionId}`
+  const listenersEnabled =
+    (await getSystemSettingsCached())?.broadcastListenersEnabled !== false
+  if (listenersEnabled) {
+    touchListener(listenerKey)
+  }
+
   // 设置SSE头
   const response = event.node.res
   response.writeHead(200, {
@@ -171,8 +163,21 @@ export default defineEventHandler(async (event) => {
       data: {
         connectionId,
         userId,
+        listenerKey,
+        listenersEnabled,
         timestamp: Date.now()
       }
+    })}\n\n`
+  )
+
+  // 新订阅者立即拿到当前广播状态，无需等待下一次上报（学生端首屏与中途进入都能对齐）。
+  // 顺带做一次连播自检：播控端掉线期间曲目可能早已播完，这里补上自动切歌再下发
+  const autoAdvance = await resolveAutoAdvance()
+  const initialSession = syncBroadcastSession({ autoAdvance })
+  response.write(
+    `data: ${JSON.stringify({
+      type: 'broadcast_state',
+      data: initialSession.snapshot ?? getBroadcastSnapshot()
     })}\n\n`
   )
 
@@ -184,6 +189,7 @@ export default defineEventHandler(async (event) => {
     if (musicConnections.has(connectionId)) {
       musicConnections.delete(connectionId)
     }
+    removeListener(listenerKey)
     if (heartbeatInterval) {
       clearInterval(heartbeatInterval)
     }
@@ -207,8 +213,11 @@ export default defineEventHandler(async (event) => {
     cleanup()
   })
 
-  // 定期发送心跳（改进错误处理）
-  const heartbeatInterval = setInterval(() => {
+  // 定期发送心跳（改进错误处理）。
+  // 间隔 45s：Vercel 等 serverless 平台对函数最长执行时间有上限（本项目配 60s），
+  // 连接期的心跳次数从 2 次降到 1 次，省一半的服务端自检开销；
+  // 收听者续期仍有客户端每 30s 的独立心跳兜底，不影响在线人数统计。
+  const heartbeatInterval = setInterval(async () => {
     if (!musicConnections.has(connectionId)) {
       clearInterval(heartbeatInterval)
       return
@@ -219,6 +228,15 @@ export default defineEventHandler(async (event) => {
       if (response.destroyed || response.writableEnded) {
         cleanup()
         return
+      }
+
+      // 心跳里做连播自检：广播在推进时即使没人上报，也要在这里把下一首顶上去
+      if (listenersEnabled) {
+        touchListener(listenerKey)
+      }
+      const session = syncBroadcastSession({ autoAdvance: await resolveAutoAdvance() })
+      if (session.changed) {
+        pushToConnections({ type: 'broadcast_state', data: session.snapshot }, 'broadcast state')
       }
 
       response.write(
@@ -234,5 +252,5 @@ export default defineEventHandler(async (event) => {
       }
       cleanup()
     }
-  }, 30000) // 每30秒发送一次心跳
+  }, 45000) // 每45秒发送一次心跳
 })

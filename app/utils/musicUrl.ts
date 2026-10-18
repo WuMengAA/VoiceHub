@@ -36,7 +36,13 @@ export type MusicUrlResolveResult = {
   idType?: string
 }
 
-export const INVALID_QQ_AUDIO_URL_SUFFIX = '/2149972737147268278.mp3'
+// QQ 音乐解析不到资源时回退的固定占位直链：文件 ID 恒定，扩展名偶有变化，
+// 因此按「文件名等于该 ID」识别，而不是死盯某一个后缀。
+const INVALID_QQ_AUDIO_URL_FILENAME = '2149972737147268278'
+const INVALID_QQ_AUDIO_URL_PATTERN = new RegExp(
+  `/${INVALID_QQ_AUDIO_URL_FILENAME}(\\.[a-z0-9]{2,5})?$`,
+  'i'
+)
 
 // 星海音源（咪咕备用通道）：由国内服务器代理获取链接，规避咪咕对海外 IP 的屏蔽
 const XINGHAI_BASE_URL = 'https://yy.zddyr.top/lx/api/'
@@ -193,7 +199,7 @@ export const isKnownInvalidQqAudioUrl = (url: string | null | undefined) => {
   if (!url) return false
   const normalizedUrl = normalizeCacheUrl(url)
   const urlWithoutParams = normalizedUrl.split('?')[0].split('#')[0]
-  return urlWithoutParams.endsWith(INVALID_QQ_AUDIO_URL_SUFFIX)
+  return INVALID_QQ_AUDIO_URL_PATTERN.test(urlWithoutParams)
 }
 
 const rememberMusicUrlSource = (url: string | null | undefined, source?: string) => {
@@ -268,6 +274,11 @@ export async function getMusicUrlResult(
       if (response?.success && response?.url) {
         if (platform === 'tencent' && qqMusicCookie && response.authUsed === false) {
           console.warn('[musicUrl] 已检测到 QQ 音乐本地登录态，但后端解析未使用登录 Cookie')
+        }
+        // 平台找不到对应资源时会回退到一个固定占位直链（/2149972737147268278.mp3），
+        // 这种链接必然无法播放。直接拒绝，让上层继续尝试第三方/官方链路，而不是把死链交出去。
+        if (platform === 'tencent' && isKnownInvalidQqAudioUrl(response.url)) {
+          throw new Error('QQ音乐返回的播放链接为无效占位链接，已跳过并尝试其他音源')
         }
         rememberMusicUrlSource(response.url, response.source)
         return {

@@ -3,6 +3,7 @@ import { db } from '~/drizzle/db'
 import { playTimes, schedules, songCollaborators, songs, users } from '~/drizzle/schema'
 import { and, asc, desc, eq, gte, inArray, like, lt, or, sql } from 'drizzle-orm'
 import { formatDateTime } from '~/utils/timeUtils'
+import { getBroadcastAnnouncement } from '~~/server/utils/broadcast-state'
 
 export default defineEventHandler(async (event) => {
   try {
@@ -166,14 +167,23 @@ export default defineEventHandler(async (event) => {
     }
 
     // 格式化数据
+    const announcement = getBroadcastAnnouncement()
     const formattedSchedules = schedulesData.map((schedule) => {
       const collaborators = collaboratorsMap.get(schedule.song.id) || []
+      const isPlaying = Boolean(
+        announcement &&
+          (announcement.scheduleId !== null
+            ? announcement.scheduleId === schedule.id
+            : announcement.songId === schedule.song.id)
+      )
 
       return {
         id: schedule.id,
         playDate: schedule.playDate,
         playDateFormatted: formatDateTime(schedule.playDate),
         semester: schedule.song.semester,
+        isPlaying,
+        broadcastPosition: isPlaying ? announcement!.position : null,
         song: {
           id: schedule.song.id,
           title: schedule.song.title,
@@ -218,6 +228,7 @@ export default defineEventHandler(async (event) => {
       success: true,
       data: {
         schedules: formattedSchedules,
+        nowPlaying: announcement,
         pagination: {
           page,
           limit,

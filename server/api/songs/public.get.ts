@@ -7,6 +7,27 @@ import { maskPublicScheduleData,
   type PublicScheduleItem
 } from '../../utils/studentMask'
 import { verifyUserAuth } from '../../utils/auth'
+import { getBroadcastSnapshot } from '~~/server/utils/broadcast-state'
+
+// 标注某条排期是否为当前广播正在播放的那一条
+const resolveBroadcastFields = (
+  broadcast: ReturnType<typeof getBroadcastSnapshot>,
+  scheduleId: number,
+  songId: number,
+  playDate: string
+) => {
+  let matched = false
+  if (broadcast) {
+    matched =
+      broadcast.scheduleId !== null
+        ? broadcast.scheduleId === scheduleId
+        : broadcast.songId === songId && broadcast.playDate === playDate
+  }
+  return {
+    isPlaying: matched,
+    broadcastPosition: matched ? broadcast!.position : null
+  }
+}
 
 const formatDisplayName = (
   user: { name?: string | null; grade?: string | null; class?: string | null },
@@ -74,12 +95,14 @@ const loadBasicSchedules = async (client: any, semester: string, user: any, isAd
     ORDER BY sch."playDate", sch.sequence
   `, params)
   const hideStudentInfo = rows[0]?.hideStudentInfo ?? true
+  const broadcast = getBroadcastSnapshot()
   const schedules = rows.map((row: any) => ({
     id: Number(row.id),
     playDate: row.playDate,
     sequence: Number(row.sequence || 1),
     replayRequestId: null,
     played: row.schedulePlayed === true,
+    ...resolveBroadcastFields(broadcast, Number(row.id), Number(row.songId), row.playDate),
     playTimeId: row.playTimeId ? Number(row.playTimeId) : null,
     playTime: row.playTimeRecordId ? {
       id: Number(row.playTimeRecordId),
@@ -332,6 +355,8 @@ export default defineEventHandler(async (event) => {
 
     const rows = await client.unsafe(schedulesQuery, params)
     const shouldHideStudentInfo = rows[0]?.hideStudentInfo ?? true
+    // 当前广播正在播放哪一条排期：学生端与教室大屏据此打「正在播放」标识
+    const broadcast = getBroadcastSnapshot()
 
     const formattedSchedules = rows.map((row: any) => {
       const collaborators = Array.isArray(row.collaborators)
@@ -384,14 +409,16 @@ export default defineEventHandler(async (event) => {
         Boolean(effectiveSubmissionNote) &&
         (effectiveNotePublic || Boolean(user && (isAdmin || isNoteOwner)))
       const replayRequestCount = Number(row.replayRequestCount || 0)
+      const scheduleId = Number(row.id)
 
       return {
-        id: Number(row.id),
+        id: scheduleId,
         // playDate 已在 SQL 层用 to_char 格式化为 YYYY-MM-DD，避免时区解析偏移
         playDate: row.playDate,
         sequence: Number(row.sequence || 1),
         replayRequestId: linkedReplayRequestId,
         played: row.schedulePlayed === true,
+        ...resolveBroadcastFields(broadcast, scheduleId, Number(row.songId), row.playDate),
         playTimeId: row.playTimeId ? Number(row.playTimeId) : null,
         playTime: row.playTimeRecordId
           ? {

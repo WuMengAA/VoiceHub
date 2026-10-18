@@ -1,4 +1,4 @@
-import { navigateTo, useState } from '#app'
+import { useState } from '#app'
 import type { User } from '~/types'
 import { useUserFilters } from '~/composables/useUserFilters'
 import { useServerErrors } from '~/composables/useLocaleText'
@@ -76,11 +76,11 @@ export const useAuth = () => {
     } catch (error: any) {
       const hadAuth = isAuthenticated.value
 
-      // 只有当之前是已认证状态，且接口明确返回401（Token无效/过期），才进行清理和跳转
+      // 只有当之前是已认证状态，且接口明确返回401（Token无效/过期），才进行清理
       if (hadAuth && error.statusCode === 401) {
         clearAuthState()
-        // Token失效，重定向到登录页
-        await navigateTo('/login?error=SessionExpired')
+        // Token失效：仅清理状态，跳转统一由 auth.global 中间件 / useErrorHandler 的
+        // redirectToLogin 守卫处理（带 2s 去重），避免「双跳 /login」。
       } else if (!hadAuth && error.statusCode === 401) {
         // 未登录状态下的 401，仅确保状态清理，不跳转
         clearAuthState()

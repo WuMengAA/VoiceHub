@@ -31,6 +31,7 @@ const currentPlaylist = ref<PlaylistItem[]>([])
 const currentPlaylistIndex = ref(-1)
 const currentPosition = ref(0) // 当前播放位置（秒）
 const duration = ref(0) // 歌曲总时长（秒）
+const pendingSeek = ref<number | null>(null) // 待执行的定位请求（秒）
 
 // 预载中的封面图引用，防止加载完成前被回收
 let pendingCoverImage: HTMLImageElement | null = null
@@ -277,6 +278,19 @@ export function useAudioPlayer() {
     currentPosition.value = position
   }
 
+  // 待执行的定位请求：播放器在歌曲加载完成后跳转到该进度（广播跟随等外部场景使用）
+  const requestSeek = (position: number) => {
+    if (!Number.isFinite(position) || position < 0) return
+    pendingSeek.value = position
+  }
+
+  // 取出并清空待执行的定位请求
+  const consumePendingSeek = () => {
+    const value = pendingSeek.value
+    pendingSeek.value = null
+    return value
+  }
+
   // 检查指定ID的歌曲是否正在播放
   const isCurrentPlaying = (songId: number | string) => {
     return isPlaying.value && currentSong.value && String(currentSong.value.id) === String(songId)
@@ -418,6 +432,11 @@ export function useAudioPlayer() {
     return readonly(duration)
   }
 
+  // 获取待执行的定位请求（非空表示播放器应跳转到该进度）
+  const getPendingSeek = () => {
+    return readonly(pendingSeek)
+  }
+
   // 获取播放进度百分比
   const getProgress = computed(() => {
     if (duration.value === 0) return 0
@@ -447,6 +466,9 @@ export function useAudioPlayer() {
     setPosition,
     setDuration,
     updatePosition,
+    requestSeek,
+    consumePendingSeek,
+    getPendingSeek,
     isCurrentPlaying,
     isCurrentSong,
     getCurrentSong,

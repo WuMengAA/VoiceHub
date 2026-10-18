@@ -17,11 +17,11 @@ export const normalizeScheduleVisibilitySettings = (settings) => {
 export const SYSTEM_SETTINGS_DEFAULTS = {
   telemetryEnabled: true,
   enablePlayTimeSelection: false,
-  siteTitle: 'VoiceHub',
+  siteTitle: '星璃校园广播',
   siteLogoUrl: '/favicon.ico',
   schoolLogoHomeUrl: null,
   schoolLogoPrintUrl: null,
-  siteDescription: '校园广播站点歌系统 - 让你的声音被听见',
+  siteDescription: '星璃校园广播 —— 校园点歌、广播排期与一起听',
   submissionGuidelines: `1. 投稿时无需加入书名号
 2. 除DJ外，其他类型歌曲均接收（包括小语种）
 3. 禁止投递含有违规内容的歌曲
@@ -90,6 +90,13 @@ export const SYSTEM_SETTINGS_DEFAULTS = {
   // 平台管理
   enabledPlatforms: JSON.stringify([...MUSIC_SOURCE_PLATFORMS]),
   platformOrder: JSON.stringify([...MUSIC_SOURCE_PLATFORMS]),
+  // 播控（学生端同步音乐管理员播放状态）
+  broadcastEnabled: true,
+  broadcastBaselineUserId: null,
+  broadcastAutoAdvance: false,
+  // 基准播控人 3 分钟无心跳即自动释放基准锁（0 表示不自动释放）
+  broadcastIdleReleaseSec: 180,
+  broadcastListenersEnabled: true,
 }
 
 export const PUBLIC_SETTINGS_FIELDS = [

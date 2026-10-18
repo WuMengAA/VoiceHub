@@ -147,7 +147,8 @@
                     :key="schedule.id"
                     :class="{
                       played: schedule.song.played && schedule.song.replayRequestCount === 0,
-                      playing: isCurrentPlaying(schedule.song.id)
+                      playing: isCurrentPlaying(schedule.song.id),
+                      broadcasting: isBroadcastPlaying(schedule.id, schedule.song.id)
                     }"
                     class="song-card"
                   >
@@ -212,6 +213,15 @@
                             :title="locale.cardCodeUsed"
                           >
                             {{ locale.cardCodeUsed }}
+                          </span>
+                          <!-- 校园广播正在播放标识 -->
+                          <span
+                            v-if="isBroadcastPlaying(schedule.id, schedule.song.id)"
+                            :title="broadcastLocale.schedulePlaying"
+                            class="broadcast-tag"
+                          >
+                            <span class="broadcast-tag-dot" />
+                            {{ broadcastLocale.schedulePlaying }}
                           </span>
                           <button
                             v-if="schedule.song?.hasSubmissionNote && schedule.song?.submissionNote"
@@ -288,6 +298,18 @@
                           }}</span>
                         </div>
                       </div>
+                    </div>
+
+                    <!-- 广播进度：仅当前广播曲目显示 -->
+                    <div
+                      v-if="isBroadcastPlaying(schedule.id, schedule.song.id)"
+                      class="song-card-broadcast-progress"
+                    >
+                      <div
+                        :class="{ paused: !broadcastState || !broadcastState.isPlaying }"
+                        class="song-card-broadcast-progress-fill"
+                        :style="{ width: broadcastProgressPercent }"
+                      />
                     </div>
                   </div>
                 </div>
@@ -648,6 +670,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Music, X, User, RefreshCw, Trash2, Check, Plus, Loader2 } from '@lucide/vue'
 import { useSongs } from '~/composables/useSongs'
 import { useAudioPlayer } from '~/composables/useAudioPlayer'
+import { useBroadcastSync } from '~/composables/useBroadcastSync'
 import { useAudioQuality } from '~/composables/useAudioQuality'
 import Icon from '~/components/UI/Icon.vue'
 import AppSpinner from '~/components/UI/Common/AppSpinner.vue'
@@ -682,9 +705,14 @@ const props = defineProps({
 
 // 音频播放相关 - 使用全局音频播放器
 const audioPlayer = useAudioPlayer()
+// 校园广播：管理员播放的歌曲与进度，学生端据此打「正在播放」标识
+const broadcastSync = useBroadcastSync()
+const broadcastState = broadcastSync.broadcast
+const broadcastProgress = broadcastSync.progress
 const { checkNeteaseLoginStatus: updateGlobalNeteaseStatus } = useAudioQuality()
 const { currentLocale, songs: songsLocale } = useLocale()
 const locale = computed(() => songsLocale.value?.scheduleList || {})
+const broadcastLocale = computed(() => songsLocale.value?.broadcast || {})
 const { t: callLocale } = useLocaleText(locale)
 
 // 获取播放时段启用状态
@@ -1589,6 +1617,16 @@ const getMusicUrl = async (song) => {
 const isCurrentPlaying = (songId) => {
   return audioPlayer.isCurrentPlaying(songId)
 }
+
+// 判断该排期是否为校园广播正在播放的那一条（管理员播放优先于本机播放）
+const isBroadcastPlaying = (scheduleId, songId) => {
+  return broadcastSync.isPlayingSchedule(scheduleId, songId)
+}
+
+// 广播进度百分比
+const broadcastProgressPercent = computed(() => {
+  return `${Math.min(100, (broadcastProgress.value || 0) * 100).toFixed(2)}%`
+})
 
 // 格式化播放时间
 const formatPlayTime = (schedule) => {
@@ -2906,6 +2944,61 @@ const vRipple = {
   font-weight: 500;
   flex-shrink: 0;
   white-space: nowrap;
+}
+
+/* 校园广播「正在播放」标识 */
+.broadcast-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  background: var(--color-accent-alpha-20);
+  border: 1px solid var(--color-accent-alpha-40);
+  border-radius: 4px;
+  color: var(--color-accent);
+  font-size: 0.7rem;
+  font-weight: 600;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.broadcast-tag-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  animation: broadcast-tag-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes broadcast-tag-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.song-card.broadcasting {
+  border-color: var(--color-accent-alpha-50);
+  box-shadow: 0 0 16px var(--color-accent-alpha-30);
+}
+
+.song-card-broadcast-progress {
+  height: 3px;
+  background: var(--overlay-15);
+  overflow: hidden;
+}
+
+.song-card-broadcast-progress-fill {
+  height: 100%;
+  background: var(--color-accent);
+  transition: width 1s linear;
+}
+
+.song-card-broadcast-progress-fill.paused {
+  background: var(--text-secondary);
 }
 
 .song-meta {

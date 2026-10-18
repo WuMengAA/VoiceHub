@@ -6,10 +6,10 @@ import { getSystemSettingsCached } from './system-settings-helper'
 export async function getSiteTitle(): Promise<string> {
   try {
     const settings = await getSystemSettingsCached()
-    return settings?.siteTitle || process.env.NUXT_PUBLIC_SITE_TITLE || 'VoiceHub'
+    return settings?.siteTitle || process.env.NUXT_PUBLIC_SITE_TITLE || '星璃校园广播'
   } catch (error) {
     console.error('获取站点标题失败:', error)
-    return 'VoiceHub'
+    return '星璃校园广播'
   }
 }
 

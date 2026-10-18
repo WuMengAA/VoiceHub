@@ -114,11 +114,11 @@ export const useSiteConfig = () => {
 
       // 使用默认配置
       siteConfig.value = {
-        siteTitle: '校园广播站点歌系统',
+        siteTitle: '星璃校园广播',
         siteLogoUrl: '/favicon.ico',
         schoolLogoHomeUrl: '',
         schoolLogoPrintUrl: '',
-        siteDescription: '校园广播站点歌系统 - 让你的声音被听见',
+        siteDescription: '星璃校园广播 —— 校园点歌、广播排期与一起听',
         submissionGuidelines: defaultSubmissionGuidelines,
         icpNumber: '',
         gonganNumber: '',
@@ -155,7 +155,7 @@ export const useSiteConfig = () => {
   }
 
   // 计算属性
-  const siteTitle = computed(() => siteConfig.value.siteTitle || '校园广播站点歌系统')
+  const siteTitle = computed(() => siteConfig.value.siteTitle || '星璃校园广播')
   const logoUrl = computed(() => siteConfig.value.siteLogoUrl || '/favicon.ico')
   const schoolLogoHomeUrl = computed(() => {
     const logos = splitThemeLogoUrl(siteConfig.value.schoolLogoHomeUrl)
@@ -165,7 +165,7 @@ export const useSiteConfig = () => {
   const schoolLogoHomeDisplayUrl = computed(() => getImageDisplayUrl(schoolLogoHomeUrl.value))
   const schoolLogoPrintDisplayUrl = computed(() => getImageDisplayUrl(schoolLogoPrintUrl.value))
   const description = computed(
-    () => siteConfig.value.siteDescription || '校园广播站点歌系统 - 让你的声音被听见'
+    () => siteConfig.value.siteDescription || '星璃校园广播 —— 校园点歌、广播排期与一起听'
   )
   const guidelines = computed(
     () => siteConfig.value.submissionGuidelines || defaultSubmissionGuidelines
