@@ -34,13 +34,13 @@ export default defineEventHandler(async (event) => {
           ...SYSTEM_SETTINGS_DEFAULTS,
           telemetryEnabled: true,
           enablePlayTimeSelection: false,
-          siteTitle: process.env.NUXT_PUBLIC_SITE_TITLE || '星璃校园广播',
+          siteTitle: process.env.NUXT_PUBLIC_SITE_TITLE || '咸林中学校园广播站（星璃校园点歌）',
           siteLogoUrl: process.env.NUXT_PUBLIC_SITE_LOGO || '/favicon.ico',
           schoolLogoHomeUrl: null,
           schoolLogoPrintUrl: null,
           siteDescription:
             process.env.NUXT_PUBLIC_SITE_DESCRIPTION ||
-            '星璃校园广播 —— 校园点歌、广播排期与一起听',
+            '咸林中学校园广播站（星璃校园点歌）是面向全校同学的校园广播站点歌平台，支持在线点歌、播放排期与播前审核。',
           submissionGuidelines: '请遵守校园规定，提交健康向上的歌曲。',
           icpNumber: null,
           gonganNumber: null,

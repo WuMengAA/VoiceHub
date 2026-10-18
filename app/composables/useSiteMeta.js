@@ -15,7 +15,7 @@ export const useSiteMeta = () => {
   const config = useRuntimeConfig()
   const requestUrl = useRequestURL()
 
-  const fallbackTitle = config.public.siteTitle || '星璃校园广播'
+  const fallbackTitle = config.public.siteTitle || '咸林中学校园广播站（星璃校园点歌）'
   const fallbackDescription = config.public.siteDescription || ''
   const ogImage = config.public.ogImage || '/og-image.png'
 

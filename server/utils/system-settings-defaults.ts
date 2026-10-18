@@ -17,11 +17,11 @@ export const normalizeScheduleVisibilitySettings = (settings) => {
 export const SYSTEM_SETTINGS_DEFAULTS = {
   telemetryEnabled: true,
   enablePlayTimeSelection: false,
-  siteTitle: '星璃校园广播',
+  siteTitle: '咸林中学校园广播站（星璃校园点歌）',
   siteLogoUrl: '/favicon.ico',
   schoolLogoHomeUrl: null,
   schoolLogoPrintUrl: null,
-  siteDescription: '星璃校园广播 —— 校园点歌、广播排期与一起听',
+  siteDescription: '咸林中学校园广播站（星璃校园点歌）是面向全校同学的校园广播站点歌平台，支持在线点歌、播放排期与播前审核。',
   submissionGuidelines: `1. 投稿时无需加入书名号
 2. 除DJ外，其他类型歌曲均接收（包括小语种）
 3. 禁止投递含有违规内容的歌曲
