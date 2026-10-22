@@ -347,6 +347,10 @@ function getRequiredPermission(pathname: string, method: string): string | null 
     return 'card-codes:write'
   }
 
+  if (normalizedPathname === '/api/open/schedules/reorder' && method === 'POST') {
+    return 'schedules:write'
+  }
+
   if (normalizedPathname.startsWith('/api/open/schedules')) {
     return 'schedules:read'
   }

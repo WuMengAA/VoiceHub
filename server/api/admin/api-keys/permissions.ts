@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 export const apiPermissionSchema = z.enum([
   'schedules:read',
+  'schedules:write',
   'songs:read',
   'songs:request',
   'songs:write',
