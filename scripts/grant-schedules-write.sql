@@ -19,18 +19,33 @@
 -- ORDER BY created_at DESC;
 
 -- ② 授权（幂等：重复执行不会插入重复行）
---    把 '被控端使用的Key名称' 换成上面查到的 Key 名称。
---    也可以改用前缀匹配：把下面第一处 WHERE 换成 k.key_prefix = 'vhub_xxxxxxxx'。
+--    推荐做法：直接授权「所有活跃、且已持有 songs:request 的 Key」——
+--    这正是被控端用的 Key（本库里即 stelarith-agent 活跃那把）。
+--    这样无需手填名字，也不会误伤停用/非受控端 Key。
 INSERT INTO api_key_permissions (id, api_key_id, permission, created_at)
 SELECT gen_random_uuid(), k.id, 'schedules:write', now()
 FROM api_keys k
-WHERE k.name = '被控端使用的Key名称'          -- ← 改这里
+WHERE k.is_active
+  AND EXISTS (
+    SELECT 1 FROM api_key_permissions p2
+    WHERE p2.api_key_id = k.id AND p2.permission = 'songs:request'
+  )
   AND NOT EXISTS (
     SELECT 1
     FROM api_key_permissions p
     WHERE p.api_key_id = k.id
       AND p.permission = 'schedules:write'
   );
+
+-- ②-alt 按名字精确授权（本库有两把同名 stelarith-agent，仅活跃那把需授权）：
+-- INSERT INTO api_key_permissions (id, api_key_id, permission, created_at)
+-- SELECT gen_random_uuid(), k.id, 'schedules:write', now()
+-- FROM api_keys k
+-- WHERE k.name = 'stelarith-agent' AND k.is_active
+--   AND NOT EXISTS (
+--     SELECT 1 FROM api_key_permissions p
+--     WHERE p.api_key_id = k.id AND p.permission = 'schedules:write');
+
 
 -- ③ 复核（应能看到该 Key 的 schedules:write 行）
 -- SELECT k.id, k.name, k.key_prefix, p.permission, p.created_at
