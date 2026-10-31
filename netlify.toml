@@ -1,6 +1,8 @@
 [build]
   command = "pnpm run netlify-build"
-  publish = "dist"
+  # Nitro 构建产物静态资源落在 .output/public（无 dist 目录），发布目录必须指向它，
+  # 否则 Netlify 会发布空目录导致整站空白。
+  publish = ".output/public"
 
 [build.environment]
   # postcss-merge-longhand 使用 Set.difference，需要 Node 22+
