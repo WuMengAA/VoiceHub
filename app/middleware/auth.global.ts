@@ -3,7 +3,7 @@ import { redirectToLogin, redirectToChangePassword } from '~/utils/authRedirect'
 
 export default defineNuxtRouteMiddleware(async (to, from) => {
   const { isAuthenticated, initAuth, user } = useAuth()
-  const publicRoutes = ['/login', '/', '/auth/error', '/forgot-password', '/reset-password']
+  const publicRoutes = ['/login', '/', '/auth/error', '/forgot-password', '/reset-password', '/voicehub/help']
 
   // 客户端初始化认证状态
   let wasAuthenticated = false
