@@ -16,7 +16,8 @@
     external_node_modules = []
     node_bundler = "esbuild"
 
-# Nuxt 会在 dist/_redirects 中自动生成重定向规则，将请求转发到 Netlify Functions
+# 回退规则由仓库内 public/_redirects 提供（构建时被复制到 .output/public/_redirects），
+# 不要把规则只写在构建产物里——那样 git clone 后重新构建会整站 404。
 
 [[headers]]
   for = "/_nuxt/*"

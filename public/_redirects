@@ -1,0 +1,4 @@
+# Netlify 路由规则：所有未命中静态文件的请求交给 Nitro Function 处理。
+# 放在 public/ 下，Nuxt 构建时会原样复制到 .output/public/_redirects。
+# 必须入库——否则重新构建（或换机器/CI）后整站会 404。
+/*    /.netlify/functions/server  200

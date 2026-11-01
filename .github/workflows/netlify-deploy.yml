@@ -1,0 +1,109 @@
+name: Deploy to Netlify
+
+# 为什么用 Actions 直推、而不是让 Netlify 自己去拉仓库：
+# 1. Netlify 的 GitHub 绑定在这个项目上一直卡在授权页，属于外部阻塞，短期内解决不了；
+# 2. 在 Linux 上构建，Nitro 产出的 node_modules 符号链接会被 zip-it-and-ship-it 正确解引用，
+#    不会重演 Windows 上「junction 被打包器丢弃 → Cannot find module 'debug' → 502」。
+#
+# 需要的仓库 Secrets（Settings → Secrets and variables → Actions）：
+#   NETLIFY_AUTH_TOKEN  Netlify 个人访问令牌（建议专为本项目新建，权限最小化）
+#   NETLIFY_SITE_ID     站点 ID，本项目为 c4d02c2a-961a-4136-84ad-252c80184965
+#   DATABASE_URL        Neon 连接串，构建期跑迁移用
+#   JWT_SECRET          JWT 签名密钥，构建期注入
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# 生产部署串行化，避免两次推送的产物互相覆盖
+concurrency:
+  group: netlify-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.29.3
+
+      - name: 安装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 构建（Nitro netlify preset）
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          NODE_ENV: production
+        run: pnpm run netlify-build
+
+      - name: 校验构建产物
+        run: |
+          set -eu
+          fail() { echo "::error::$1"; exit 1; }
+
+          [ -f .output/public/index.html ] || fail "缺少 .output/public/index.html，静态资源未产出"
+          [ -f .output/public/_redirects ] || fail "缺少 .output/public/_redirects，路由回退规则丢失"
+          [ -f .netlify/functions-internal/server/main.mjs ] || fail "缺少函数入口 main.mjs"
+
+          # 这几个包在 Windows 构建时曾因 junction 被丢弃，导致线上 502。
+          # Linux 构建应当正常，这里留一道闸：缺任何一个就直接失败，不要带上线。
+          for pkg in debug express ms require-in-the-middle; do
+            f=".netlify/functions-internal/server/node_modules/$pkg/package.json"
+            [ -f "$f" ] || fail "函数产物缺少依赖 $pkg（线上会 5xx）"
+          done
+
+          echo "产物校验通过：$(du -sh .netlify/functions-internal/server | cut -f1) 函数 / $(du -sh .output/public | cut -f1) 静态资源"
+
+      - name: 部署到 Netlify（生产）
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: |
+          set -eu
+          [ -n "${NETLIFY_AUTH_TOKEN:-}" ] || { echo "::error::缺少 Secret NETLIFY_AUTH_TOKEN"; exit 1; }
+          [ -n "${NETLIFY_SITE_ID:-}" ] || { echo "::error::缺少 Secret NETLIFY_SITE_ID"; exit 1; }
+
+          # 只用 commit SHA 做部署备注：提交信息里可能含引号/反引号/换行，注入到 shell 参数会出事
+          npx --yes netlify-cli@latest deploy \
+            --prod \
+            --dir .output/public \
+            --functions .netlify/functions-internal \
+            --message "CI ${GITHUB_SHA:0:7}"
+
+      - name: 上线冒烟测试
+        run: |
+          set -eu
+          base="https://voicehub-2026.netlify.app"
+
+          # 函数冷启动 + CDN 传播需要时间，给足重试
+          code=$(curl -s -o /tmp/count.json -w '%{http_code}' \
+            --retry 6 --retry-delay 8 --retry-all-errors \
+            "$base/api/songs/count" || true)
+          echo "GET /api/songs/count -> $code"
+          cat /tmp/count.json || true
+
+          if [ "$code" != "200" ]; then
+            echo "::error::冒烟测试失败，函数未正常响应（$code）"
+            exit 1
+          fi
+          # 能返回计数就说明 Function 起来了、数据库连上了
+          grep -q '"count"' /tmp/count.json || { echo "::error::接口未返回 count 字段"; exit 1; }
+
+          page=$(curl -s -o /dev/null -w '%{http_code}' --retry 4 --retry-delay 5 "$base/voicehub/help")
+          echo "GET /voicehub/help -> $page"
+          [ "$page" = "200" ] || { echo "::error::帮助页不可用（$page）"; exit 1; }
